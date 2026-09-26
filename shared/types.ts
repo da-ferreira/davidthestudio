@@ -30,7 +30,8 @@ export type WorkspaceDetail = Workspace & { repos: RepoStatus[] }
 
 export type ApiError = { error: string; reasons?: string[] }
 
-export type TicketStatus = 'running' | 'done' | 'error' | 'interrupted'
+// waiting: o agente parou numa pergunta ou pedido de permissão e espera a resposta na tela.
+export type TicketStatus = 'running' | 'waiting' | 'done' | 'error' | 'interrupted'
 
 export type Ticket = {
   id: string
@@ -56,6 +57,23 @@ export type AgentEvent =
   | { type: 'tool'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; error: boolean; output: string }
   | { type: 'result'; ok: boolean; costUsd: number; durationMs: number; turns: number; error?: string }
+  | { type: 'ask'; id: string; ask: Ask }
+  | { type: 'answer'; id: string; reply: Reply }
+
+export type Question = {
+  question: string
+  header: string
+  options: { label: string; description: string }[]
+  multiSelect: boolean
+}
+
+// O que o agente pede ao humano no meio da execução.
+export type Ask =
+  | { kind: 'permission'; tool: string; title: string; detail: string }
+  | { kind: 'question'; questions: Question[] }
+
+// answers: texto da pergunta -> resposta (várias opções separadas por vírgula).
+export type Reply = { allow: boolean; answers?: Record<string, string> }
 
 export type TicketEvent = { seq: number; at: string; event: AgentEvent }
 

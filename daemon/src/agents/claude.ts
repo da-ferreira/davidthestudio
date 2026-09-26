@@ -1,5 +1,5 @@
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent } from '@studio/shared'
+import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { AgentEvent, Ask, Question, Reply } from '@studio/shared'
 
 const MAX_OUTPUT = 4000
 
@@ -8,22 +8,101 @@ type StartOptions = {
   prompt: string
   model: string
   instructions: string
+  resume?: string | null
   onEvent: (e: AgentEvent) => void
+  // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
+  onAsk: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
 }
 
-// Roda o Claude Code até o fim; resolve quando o agente termina ou falha.
-export async function start({ cwd, prompt, model, instructions, onEvent }: StartOptions): Promise<void> {
+export type Session = {
+  // false quando a sessão já está encerrando; aí quem chamou retoma com resume.
+  send: (text: string) => boolean
+  stop: () => Promise<void>
+  done: Promise<void>
+}
+
+export function start(o: StartOptions): Session {
+  const queue: string[] = []
+  let sent = 0
+  let ended = 0
+  let wake = () => {}
+  let closed = false
+  const endTurn = () => {
+    ended++
+    wake()
+  }
+
+  // Uma mensagem por turno: a próxima entra quando o turno atual termina; fila vazia encerra a sessão.
+  async function* input(): AsyncGenerator<SDKUserMessage> {
+    let text: string | undefined = o.prompt
+    while (text !== undefined) {
+      yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null }
+      sent++
+      while (!closed && ended < sent) await new Promise<void>((r) => (wake = r))
+      text = closed ? undefined : queue.shift()
+    }
+    closed = true
+  }
+
   const q = query({
-    prompt,
+    prompt: input(),
     options: {
-      cwd,
-      model,
-      // Edições dentro da pasta da tarefa passam; o resto segue as regras de permissão do usuário.
+      cwd: o.cwd,
+      model: o.model,
+      resume: o.resume ?? undefined,
+      // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
       permissionMode: 'acceptEdits',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: instructions },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },
+      canUseTool: async (tool, toolInput, { signal, toolUseID }) => {
+        const ask: Ask =
+          tool === 'AskUserQuestion'
+            ? { kind: 'question', questions: questionsOf(toolInput) }
+            : { kind: 'permission', tool, title: `O agente quer usar ${tool}`, detail: detailOf(toolInput) }
+        const reply = await o.onAsk(toolUseID, ask, signal)
+        if (!reply.allow) return { behavior: 'deny', message: 'O usuário recusou pela tela do david the studio.' }
+        return { behavior: 'allow', updatedInput: reply.answers ? { ...toolInput, answers: reply.answers } : toolInput }
+      },
     },
   })
-  for await (const m of q) for (const e of translate(m)) onEvent(e)
+
+  const done = (async () => {
+    for await (const m of q) {
+      for (const e of translate(m)) o.onEvent(e)
+      if (m.type === 'result') endTurn()
+    }
+  })()
+
+  return {
+    send(text) {
+      if (closed) return false
+      queue.push(text)
+      return true
+    },
+    async stop() {
+      closed = true
+      queue.length = 0
+      await q.interrupt().catch(() => {})
+      wake()
+      // Se o processo não sair sozinho depois do interrupt, encerra à força.
+      setTimeout(() => q.close(), 5000).unref()
+    },
+    done,
+  }
+}
+
+function questionsOf(input: Record<string, unknown>): Question[] {
+  const qs = (input.questions ?? []) as Question[]
+  return qs.map((q) => ({
+    question: q.question,
+    header: q.header,
+    multiSelect: !!q.multiSelect,
+    options: q.options.map((op) => ({ label: op.label, description: op.description })),
+  }))
+}
+
+function detailOf(input: Record<string, unknown>): string {
+  for (const k of ['command', 'file_path', 'url', 'pattern']) if (typeof input[k] === 'string') return input[k] as string
+  return JSON.stringify(input).slice(0, MAX_OUTPUT)
 }
 
 function translate(m: SDKMessage): AgentEvent[] {

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, NewTicket, Ticket, TicketDetail, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
+import type { AgentEvent, NewTicket, Reply, Ticket, TicketDetail, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
@@ -53,7 +53,13 @@ function emit(id: string, m: WsMessage) {
 }
 
 // O daemon caiu no meio de uma execução: o processo do agente morreu junto.
-db.prepare("UPDATE tickets SET status = 'interrupted' WHERE status = 'running'").run()
+db.prepare("UPDATE tickets SET status = 'interrupted' WHERE status IN ('running', 'waiting')").run()
+
+const sessions = new Map<string, claude.Session>()
+const asks = new Map<string, { ticket: string; resolve: (r: Reply) => void }>()
+// Mensagens que chegaram enquanto a sessão encerrava; viram um resume logo em seguida.
+const pending = new Map<string, string[]>()
+const stopping = new Set<string>()
 
 function getRow(id: string): Row {
   const row = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as Row | undefined
@@ -144,7 +150,10 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
      VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
   ).run(id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), input.model, branch, taskDir)
 
-  run(getTicket(id))
+  const t = getTicket(id)
+  const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
+  record(id, { type: 'user', text: prompt })
+  run(t, prompt)
   return getTicket(id)
 }
 
@@ -170,31 +179,83 @@ function setStatus(id: string, status: TicketStatus, sessionId?: string) {
   emit(id, { kind: 'ticket', ticket: getTicket(id) })
 }
 
-function run(t: Ticket) {
-  const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
+export function sendMessage(id: string, input: string) {
+  const text = input?.trim()
+  if (!text) throw new HttpError(400, 'Mensagem vazia')
+  const t = getTicket(id)
+  const s = sessions.get(id)
+  if (s && stopping.has(id)) throw new HttpError(409, 'O agente está parando; mande de novo em instantes')
+  record(id, { type: 'user', text })
+  if (s?.send(text)) return
+  if (s) pending.set(id, [...(pending.get(id) ?? []), text])
+  else run(t, text, t.sessionId)
+}
+
+export async function stopTicket(id: string) {
+  getRow(id)
+  const s = sessions.get(id)
+  if (!s) throw new HttpError(409, 'O agente não está rodando')
+  stopping.add(id)
+  pending.delete(id)
+  await s.stop()
+}
+
+export function answerAsk(id: string, askId: string, reply: Reply) {
+  const a = asks.get(askId)
+  if (!a || a.ticket !== id) throw new HttpError(404, 'Essa pergunta não está mais aberta')
+  asks.delete(askId)
+  record(id, { type: 'answer', id: askId, reply: { allow: !!reply.allow, answers: reply.answers } })
+  a.resolve(reply)
+  if (![...asks.values()].some((x) => x.ticket === id)) setStatus(id, 'running')
+}
+
+function dropAsks(id: string) {
+  for (const [askId, a] of asks) if (a.ticket === id) asks.delete(askId)
+}
+
+function run(t: Ticket, prompt: string, resume?: string | null) {
   const instructions = [
     `Você está trabalhando no ticket ${t.id} do david the studio.`,
     `Os repositórios ${t.repos.join(', ')} estão nesta pasta como git worktrees na branch ${t.branch}.`,
     'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
   ].join('\n')
-  record(t.id, { type: 'user', text: prompt })
+  setStatus(t.id, 'running')
 
   let ok = false
-  claude
-    .start({
-      cwd: t.taskDir,
-      prompt,
-      model: t.model,
-      instructions,
-      onEvent: (e) => {
-        record(t.id, e)
-        if (e.type === 'start') setStatus(t.id, 'running', e.sessionId)
-        if (e.type === 'result') ok = e.ok
-      },
-    })
-    .then(() => setStatus(t.id, ok ? 'done' : 'error'))
+  const session = claude.start({
+    cwd: t.taskDir,
+    prompt,
+    model: t.model,
+    instructions,
+    resume,
+    onEvent: (e) => {
+      if (e.type === 'result' && stopping.has(t.id)) e = { ...e, ok: false, error: 'parado por você' }
+      record(t.id, e)
+      if (e.type === 'start') setStatus(t.id, 'running', e.sessionId)
+      if (e.type === 'result') ok = e.ok
+    },
+    onAsk: (askId, ask, signal) =>
+      new Promise((resolve) => {
+        asks.set(askId, { ticket: t.id, resolve })
+        record(t.id, { type: 'ask', id: askId, ask })
+        setStatus(t.id, 'waiting')
+        signal.addEventListener('abort', () => asks.delete(askId) && resolve({ allow: false }))
+      }),
+  })
+  sessions.set(t.id, session)
+
+  session.done
     .catch((err) => {
-      record(t.id, { type: 'result', ok: false, costUsd: 0, durationMs: 0, turns: 0, error: String(err?.message ?? err) })
-      setStatus(t.id, 'error')
+      if (!stopping.has(t.id)) record(t.id, { type: 'result', ok: false, costUsd: 0, durationMs: 0, turns: 0, error: String(err?.message ?? err) })
+      ok = false
+    })
+    .then(() => {
+      sessions.delete(t.id)
+      dropAsks(t.id)
+      const next = pending.get(t.id)
+      pending.delete(t.id)
+      if (stopping.delete(t.id)) return setStatus(t.id, 'interrupted')
+      if (next) return run(getTicket(t.id), next.join('\n\n'), getTicket(t.id).sessionId)
+      setStatus(t.id, ok ? 'done' : 'error')
     })
 }

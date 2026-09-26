@@ -5,6 +5,9 @@
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 
+/* A interface é só clara: dark: do shadcn só vale com .dark, não com o modo escuro do sistema. */
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Inter Variable', sans-serif;

@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
-import type { ApiError, Health, NewTicket, WsMessage } from '@studio/shared'
+import type { ApiError, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
 import { HttpError } from './http-error.ts'
 import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
@@ -45,6 +45,18 @@ app.post<{ Params: { id: string }; Body: NewTicket }>('/api/workspaces/:id/ticke
   tickets.createTicket(req.params.id, req.body),
 )
 app.get<{ Params: { id: string } }>('/api/tickets/:id', async (req) => tickets.getTicketDetail(req.params.id))
+app.post<{ Params: { id: string }; Body: { text: string } }>('/api/tickets/:id/messages', async (req) => {
+  tickets.sendMessage(req.params.id, req.body.text)
+  return tickets.getTicket(req.params.id)
+})
+app.post<{ Params: { id: string } }>('/api/tickets/:id/stop', async (req) => {
+  await tickets.stopTicket(req.params.id)
+  return tickets.getTicket(req.params.id)
+})
+app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:id/asks/:askId', async (req) => {
+  tickets.answerAsk(req.params.id, req.params.askId, req.body)
+  return tickets.getTicket(req.params.id)
+})
 
 // Manda o histórico gravado e depois os eventos novos. Tudo no mesmo tick,
 // então nenhum evento cai entre a leitura do banco e a inscrição.

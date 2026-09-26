@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils'
 
 const STATUS: Record<TicketStatus, { label: string; className: string }> = {
   running: { label: 'Rodando', className: 'bg-blue-50 text-blue-700' },
+  waiting: { label: 'Aguardando você', className: 'bg-amber-50 text-amber-700' },
   done: { label: 'Concluído', className: 'bg-green-50 text-green-700' },
   error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
-  interrupted: { label: 'Interrompido', className: 'bg-amber-50 text-amber-700' },
+  interrupted: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },
 }
 
 export const MODELS = [
@@ -21,7 +22,7 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
   const s = STATUS[status]
   return (
     <Badge className={cn('gap-1.5', s.className)}>
-      <span className={cn('size-1.5 rounded-full bg-current', status === 'running' && 'animate-pulse')} />
+      <span className={cn('size-1.5 rounded-full bg-current', (status === 'running' || status === 'waiting') && 'animate-pulse')} />
       {s.label}
     </Badge>
   )
