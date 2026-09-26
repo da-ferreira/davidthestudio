@@ -31,6 +31,17 @@ export function Repositorios() {
   const [removing, setRemoving] = useState<RepoStatus | null>(null)
   const [configuring, setConfiguring] = useState<RepoStatus | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [cloning, setCloning] = useState<string | null>(null)
+  const [cloneError, setCloneError] = useState<{ name: string; text: string } | null>(null)
+
+  const cloneMissing = (name: string) => {
+    setCloning(name)
+    setCloneError(null)
+    api<WorkspaceDetail>(`/workspaces/${ws!.id}/repos/${name}/clone`, { method: 'POST' })
+      .then(setWs)
+      .catch((e) => setCloneError({ name, text: e instanceof ApiError ? e.message : 'Falha no git clone' }))
+      .finally(() => setCloning(null))
+  }
 
   const rescan = () => {
     setScanning(true)
@@ -93,6 +104,7 @@ export function Repositorios() {
                     <TableCell className="font-mono text-[12px]">{r.branch ?? '—'}</TableCell>
                     <TableCell>
                       <RepoState repo={r} />
+                      {cloneError?.name === r.name && <p className="mt-1 max-w-[280px] text-[12px] break-words whitespace-normal text-destructive">{cloneError.text}</p>}
                     </TableCell>
                     <TableCell className="font-mono text-[12px]">
                       {r.test ?? <span className="text-muted-foreground">—</span>}
@@ -102,6 +114,11 @@ export function Repositorios() {
                       {r.remote ?? '—'}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
+                      {!r.present && r.remote && (
+                        <Button variant="outline" size="sm" disabled={!!cloning} onClick={() => cloneMissing(r.name)}>
+                          {cloning === r.name ? 'Clonando…' : 'Clonar'}
+                        </Button>
+                      )}
                       {r.present && (
                         <Button variant="ghost" size="icon-sm" aria-label={`Configurar ${r.name}`} onClick={() => setConfiguring(r)}>
                           <Settings2 className="text-muted-foreground" />

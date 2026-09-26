@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { FolderPlus, GitBranch, Trash2 } from 'lucide-react'
-import type { Workspace } from '@studio/shared'
+import type { ImportResult, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,6 +29,7 @@ import { ApiError, api } from '@/lib/api'
 export function Workspaces() {
   const [items, setItems] = useState<Workspace[] | null>(null)
   const [open, setOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [removing, setRemoving] = useState<Workspace | null>(null)
 
   const load = () => api<Workspace[]>('/workspaces').then(setItems).catch(() => setItems([]))
@@ -40,7 +41,16 @@ export function Workspaces() {
     <>
       <Topbar
         crumbs={['Workspaces']}
-        actions={items?.length ? <Button onClick={() => setOpen(true)}>Registrar pasta</Button> : null}
+        actions={
+          items?.length ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setOpen(true)}>
+                Registrar pasta
+              </Button>
+              <Button onClick={() => setImporting(true)}>Importar do git</Button>
+            </div>
+          ) : null
+        }
       />
       <div className="flex flex-1 flex-col gap-8 px-8 py-7">
         <h1 className="text-[28px] font-medium tracking-[-0.025em]">Workspaces</h1>
@@ -52,11 +62,14 @@ export function Workspaces() {
             <div className="font-medium">Nenhum workspace ainda</div>
             <p className="max-w-sm text-muted-foreground">
               Registre uma pasta com seus repositórios e contexto, como{' '}
-              <span className="font-mono text-[13px]">~/lp/agentia</span>.
+              <span className="font-mono text-[13px]">~/lp/agentia</span>, ou importe o repositório de contexto pela URL do git.
             </p>
-            <Button className="mt-2" onClick={() => setOpen(true)}>
-              Registrar pasta
-            </Button>
+            <div className="mt-2 flex gap-2">
+              <Button variant="outline" onClick={() => setOpen(true)}>
+                Registrar pasta
+              </Button>
+              <Button onClick={() => setImporting(true)}>Importar do git</Button>
+            </div>
           </div>
         )}
         {!!items?.length && (
@@ -96,6 +109,7 @@ export function Workspaces() {
         )}
       </div>
       <RegisterDialog open={open} onOpenChange={setOpen} onDone={load} />
+      <ImportDialog open={importing} onOpenChange={setImporting} onDone={load} />
       <RemoveWorkspaceDialog ws={removing} onClose={() => setRemoving(null)} onDone={setItems} />
     </>
   )
@@ -150,6 +164,93 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ImportDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: () => void }) {
+  const navigate = useNavigate()
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<ImportResult | null>(null)
+
+  const openWorkspace = (id: string) => navigate(`/w/${id}/repos`)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api<ImportResult>('/workspaces/import', { method: 'POST', body: { url } })
+      onDone()
+      if (r.failed.length) setResult(r)
+      else openWorkspace(r.workspace.id)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (busy) return
+        onOpenChange(v)
+        setError(null)
+        setResult(null)
+        setUrl('')
+      }}
+    >
+      <DialogContent>
+        {result ? (
+          <div className="flex flex-col gap-5">
+            <DialogHeader>
+              <DialogTitle>{result.workspace.name} importado, com pendências</DialogTitle>
+              <DialogDescription>Estes repositórios não foram clonados. Ficam como ausentes e dá para clonar de novo na tela de repositórios.</DialogDescription>
+            </DialogHeader>
+            <ul className="flex flex-col gap-2 text-[13px]">
+              {result.failed.map((f) => (
+                <li key={f.name}>
+                  <span className="font-mono">{f.name}</span>
+                  <span className="block break-words text-muted-foreground">{f.error}</span>
+                </li>
+              ))}
+            </ul>
+            <DialogFooter>
+              <Button onClick={() => openWorkspace(result.workspace.id)}>Abrir workspace</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-5">
+            <DialogHeader>
+              <DialogTitle>Importar do git</DialogTitle>
+              <DialogDescription>
+                URL do repositório de contexto do workspace. O studio clona ele e cada repositório listado no workspace.json, usando o seu GitHub da tela Conexões.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="ws-url">URL</Label>
+              <Input
+                id="ws-url"
+                autoFocus
+                placeholder="https://github.com/empresa/agentia.git"
+                className="font-mono text-[13px]"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+              {error && <p className="break-words text-[13px] text-destructive">{error}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={!url.trim() || busy}>
+                {busy ? 'Clonando os repositórios…' : 'Importar'}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )

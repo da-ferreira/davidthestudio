@@ -25,6 +25,8 @@ export type Connections = { claude: AgentStatus; codex: AgentStatus; github: Git
 export type GithubStatus = { connected: boolean; account: string | null; machine: boolean }
 
 // Formato do workspace.json na raiz do workspace.
+export type ImportResult = { workspace: Workspace; failed: { name: string; error: string }[] }
+
 export type Manifest = {
   name: string
   repos: ManifestRepo[]

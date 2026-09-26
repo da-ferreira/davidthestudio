@@ -121,6 +121,7 @@ app.delete('/api/me/github', async (req) => {
 })
 app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
+app.post<{ Body: { url: string } }>('/api/workspaces/import', async (req) => ws.importWorkspace(req.body.url ?? '', req.user))
 app.get<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => ws.getWorkspace(req.params.id))
 app.delete<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => {
   await ws.removeWorkspace(req.params.id)
@@ -137,6 +138,10 @@ app.post<{ Params: { id: string } }>('/api/workspaces/:id/context/unify', async 
 
 app.post<{ Params: { id: string }; Body: { url: string } }>('/api/workspaces/:id/repos', async (req) => {
   await ws.addRepo(req.params.id, req.body.url, req.user)
+  return ws.getWorkspace(req.params.id)
+})
+app.post<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name/clone', async (req) => {
+  await ws.cloneMissingRepo(req.params.id, req.params.name, req.user)
   return ws.getWorkspace(req.params.id)
 })
 app.get<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name/removal', async (req) => ({

@@ -1,10 +1,10 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, User, Workspace, WorkspaceDetail } from '@studio/shared'
+import type { ContextFiles, ImportResult, Manifest, ManifestRepo, RepoStatus, User, Workspace, WorkspaceDetail } from '@studio/shared'
 import { gitEnv } from './connections.ts'
 import { deleteConversations } from './conversations.ts'
-import { db } from './db.ts'
+import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
 import { suggestTest } from './node-deps.ts'
@@ -72,6 +72,68 @@ export async function registerWorkspace(input: string): Promise<Workspace> {
   const ws = { id: uniqueId(manifest.name), name: manifest.name, path: dir }
   db.prepare('INSERT INTO workspaces (id, name, path) VALUES (?, ?, ?)').run(ws.id, ws.name, ws.path)
   return { ...ws, repoCount: manifest.repos.length }
+}
+
+// Pasta de destino dos workspaces importados por URL; os registrados por caminho ficam onde estão.
+const IMPORT_DIR = path.join(DATA_DIR, 'workspaces')
+
+function nameFromUrl(url: string): string {
+  const name = url.trim().replace(/\/+$/, '').split(/[/:]/).pop()?.replace(/\.git$/, '')
+  if (!name || !/^[\w.-]+$/.test(name) || name === '..' || name === '.') throw new HttpError(400, 'URL inválida')
+  return name
+}
+
+async function cloneInto(url: string, parent: string, name: string, env: Record<string, string>) {
+  try {
+    await g.clone(url.trim(), parent, name, env)
+  } catch (err) {
+    fs.rmSync(path.join(parent, name), { recursive: true, force: true })
+    throw new HttpError(400, (err as { stderr?: string }).stderr?.trim() || 'Falha no git clone')
+  }
+}
+
+// Clona o repositório de contexto e cada repo do workspace.json. Repo que falha fica
+// ausente no manifesto e pode ser clonado depois pela tela de repositórios.
+export async function importWorkspace(url: string, user: User): Promise<ImportResult> {
+  const name = nameFromUrl(url)
+  const dir = path.join(IMPORT_DIR, name)
+  if (fs.existsSync(dir)) throw new HttpError(409, `Já existe a pasta ${dir}`)
+  const env = gitEnv(user)
+  fs.mkdirSync(IMPORT_DIR, { recursive: true })
+  await cloneInto(url, IMPORT_DIR, name, env)
+
+  try {
+    const failed: ImportResult['failed'] = []
+    for (const r of readManifest(dir)?.repos ?? []) {
+      if (fs.existsSync(path.join(dir, r.name))) continue
+      if (!r.remote) {
+        failed.push({ name: r.name, error: 'sem remote no workspace.json' })
+        continue
+      }
+      try {
+        await cloneInto(r.remote, dir, r.name, env)
+      } catch (err) {
+        failed.push({ name: r.name, error: (err as Error).message })
+      }
+    }
+    return { workspace: await registerWorkspace(dir), failed }
+  } catch (err) {
+    fs.rmSync(dir, { recursive: true, force: true })
+    throw err instanceof SyntaxError ? new HttpError(400, 'O workspace.json do repositório não é um JSON válido') : err
+  }
+}
+
+export async function cloneMissingRepo(id: string, name: string, user: User) {
+  const row = getRow(id)
+  const manifest = manifestOf(row)
+  const i = manifest.repos.findIndex((r) => r.name === name)
+  const repo = manifest.repos[i]
+  if (!repo) throw new HttpError(404, 'Repositório não encontrado')
+  if (fs.existsSync(path.join(row.path, name))) throw new HttpError(409, `A pasta ${name} já existe no workspace`)
+  if (!repo.remote) throw new HttpError(400, 'O repositório não tem remote no workspace.json')
+  await cloneInto(repo.remote, row.path, name, gitEnv(user))
+  manifest.repos[i] = await describeRepo(path.join(row.path, name), repo)
+  writeManifest(row.path, manifest)
 }
 
 // Acrescenta repos novos na pasta e atualiza remote/branch dos que existem. Repo que
@@ -153,19 +215,12 @@ async function repoStatus(id: string, root: string, repo: ManifestRepo): Promise
 
 export async function addRepo(id: string, url: string, user: User): Promise<void> {
   const row = getRow(id)
-  const name = url.trim().replace(/\/+$/, '').split(/[/:]/).pop()?.replace(/\.git$/, '')
-  if (!name || !/^[\w.-]+$/.test(name) || name === '..') throw new HttpError(400, 'URL inválida')
+  const name = nameFromUrl(url)
   const manifest = manifestOf(row)
   if (manifest.repos.some((r) => r.name === name) || fs.existsSync(path.join(row.path, name))) {
     throw new HttpError(409, `Já existe "${name}" neste workspace`)
   }
-  const env = gitEnv(user)
-  try {
-    await g.clone(url.trim(), row.path, name, env)
-  } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr?.trim()
-    throw new HttpError(400, stderr || 'Falha no git clone')
-  }
+  await cloneInto(url, row.path, name, gitEnv(user))
   manifest.repos.push(await describeRepo(path.join(row.path, name), { name }))
   writeManifest(row.path, manifest)
 }
