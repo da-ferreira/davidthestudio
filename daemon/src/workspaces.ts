@@ -5,11 +5,13 @@ import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, Workspace, Works
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
+import { excludeFromGit, suggestTest } from './node-deps.ts'
 import { deleteTickets, openTickets, ticketsUsingRepo } from './tickets.ts'
 
 type Row = { id: string; name: string; path: string }
 
 const MANIFEST = 'workspace.json'
+const ENV = '.env'
 
 function readManifest(dir: string): Manifest | null {
   const file = path.join(dir, MANIFEST)
@@ -31,8 +33,10 @@ function manifestOf(row: Row): Manifest {
   return readManifest(row.path) ?? { name: row.name, repos: [] }
 }
 
-async function describeRepo(dir: string, name: string): Promise<ManifestRepo> {
-  return { name, remote: await g.remoteUrl(dir), defaultBranch: await g.defaultBranch(dir) }
+// Atualiza remote e branch; o comando de teste só é sugerido se nunca foi definido.
+async function describeRepo(dir: string, prev: ManifestRepo | { name: string }): Promise<ManifestRepo> {
+  const test = 'test' in prev && prev.test !== undefined ? prev.test : suggestTest(dir)
+  return { ...prev, remote: await g.remoteUrl(dir), defaultBranch: await g.defaultBranch(dir), test }
 }
 
 function uniqueId(name: string): string {
@@ -77,9 +81,9 @@ async function scan(dir: string, manifest: Manifest): Promise<Manifest> {
     .map((e) => e.name)
     .sort()
   const repos = await Promise.all(
-    manifest.repos.map((r) => (fs.existsSync(path.join(dir, r.name, '.git')) ? describeRepo(path.join(dir, r.name), r.name) : r)),
+    manifest.repos.map((r) => (fs.existsSync(path.join(dir, r.name, '.git')) ? describeRepo(path.join(dir, r.name), r) : r)),
   )
-  for (const name of found) repos.push(await describeRepo(path.join(dir, name), name))
+  for (const name of found) repos.push(await describeRepo(path.join(dir, name), { name }))
   const next = { ...manifest, repos }
   writeManifest(dir, next)
   return next
@@ -137,9 +141,9 @@ export async function getWorkspace(id: string): Promise<WorkspaceDetail> {
 
 async function repoStatus(root: string, repo: ManifestRepo): Promise<RepoStatus> {
   const dir = path.join(root, repo.name)
-  if (!fs.existsSync(path.join(dir, '.git'))) return { ...repo, present: false, branch: null, changes: 0, unpushed: [] }
+  if (!fs.existsSync(path.join(dir, '.git'))) return { ...repo, present: false, branch: null, changes: 0, unpushed: [], hasEnv: false }
   const [branch, changes, unpushed] = await Promise.all([g.currentBranch(dir), g.changedFiles(dir), g.unpushedBranches(dir)])
-  return { ...repo, present: true, branch, changes, unpushed }
+  return { ...repo, present: true, branch, changes, unpushed, hasEnv: fs.existsSync(path.join(dir, ENV)) }
 }
 
 export async function addRepo(id: string, url: string): Promise<void> {
@@ -156,7 +160,7 @@ export async function addRepo(id: string, url: string): Promise<void> {
     const stderr = (err as { stderr?: string }).stderr?.trim()
     throw new HttpError(400, stderr || 'Falha no git clone')
   }
-  manifest.repos.push(await describeRepo(path.join(row.path, name), name))
+  manifest.repos.push(await describeRepo(path.join(row.path, name), { name }))
   writeManifest(row.path, manifest)
 }
 
@@ -183,4 +187,33 @@ export async function removeRepo(id: string, name: string): Promise<void> {
   fs.rmSync(path.join(row.path, name), { recursive: true, force: true })
   manifest.repos = manifest.repos.filter((r) => r.name !== name)
   writeManifest(row.path, manifest)
+}
+
+function presentRepo(id: string, name: string) {
+  const row = getRow(id)
+  const manifest = manifestOf(row)
+  const repo = manifest.repos.find((r) => r.name === name)
+  const dir = path.join(row.path, name)
+  if (!repo || !fs.existsSync(path.join(dir, '.git'))) throw new HttpError(404, 'Repositório não encontrado')
+  return { row, manifest, repo, dir }
+}
+
+export function setTestCommand(id: string, name: string, command: string | null) {
+  const { row, manifest, repo } = presentRepo(id, name)
+  repo.test = command?.trim() || null
+  writeManifest(row.path, manifest)
+}
+
+
+export function repoEnv(id: string, name: string): string | null {
+  return readIf(path.join(presentRepo(id, name).dir, ENV))
+}
+
+// Fica só no repo principal: o executor de testes injeta no processo do teste, o agente não vê.
+export async function setRepoEnv(id: string, name: string, content: string) {
+  const { dir } = presentRepo(id, name)
+  const file = path.join(dir, ENV)
+  if (!content.trim()) return fs.rmSync(file, { force: true })
+  await excludeFromGit(dir, `/${ENV}`)
+  fs.writeFileSync(file, content.endsWith('\n') ? content : content + '\n', { mode: 0o600 })
 }

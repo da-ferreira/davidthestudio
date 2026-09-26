@@ -6,6 +6,7 @@ import type { AgentEvent, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, T
 import * as claude from './agents/claude.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
+import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
 import { HttpError } from './http-error.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
@@ -166,6 +167,7 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
       const base = manifestRepos.find((r) => r.name === name)!.defaultBranch
       await g.addWorktree(path.join(root, name), path.join(taskDir, name), branch, base)
       created.push(name)
+      await linkNodeModules(path.join(root, name), path.join(taskDir, name))
     }
   } catch (err) {
     for (const name of created) {
@@ -272,12 +274,23 @@ const STAGE_INSTRUCTIONS: Record<Stage, string> = {
   review: 'Etapa atual: Revisão. O humano está revisando o diff; faça só os ajustes que ele pedir.',
 }
 
+const linkedRepos = (t: Ticket) => t.repos.filter((r) => hasLinkedNodeModules(path.join(t.taskDir, r)))
+
+function linkedNodeModules(t: Ticket) {
+  const linked = linkedRepos(t)
+  if (!linked.length) return []
+  return [
+    `O node_modules de ${linked.join(', ')} é um link para o do repositório principal. Se precisar mudar dependências, apague o link (rm node_modules) antes de instalar.`,
+  ]
+}
+
 function run(t: Ticket, prompt: string, resume?: string | null) {
   const instructions = [
     `Você está trabalhando no ticket ${t.id} do david the studio.`,
     `Os repositórios são as subpastas ${t.repos.map((r) => `${r}/`).join(', ')} da pasta atual, já prontos na branch ${t.branch}.`,
     `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
     'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
+    ...linkedNodeModules(t),
     STAGE_INSTRUCTIONS[t.stage],
   ].join('\n')
   setStatus(t.id, 'running')
@@ -290,6 +303,8 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
     instructions,
     resume,
     writableDir: isDocStage(t.stage) ? path.join(t.taskDir, DOCS_DIR) : undefined,
+    // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
+    extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
     onEvent: (e) => {
       if (e.type === 'result' && stopping.has(t.id)) e = { ...e, ok: false, error: 'parado por você' }
       record(t.id, e)

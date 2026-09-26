@@ -12,6 +12,8 @@ type StartOptions = {
   resume?: string | null
   // Se definido, edições de arquivo fora desta pasta são recusadas.
   writableDir?: string
+  // Pastas fora do cwd que o agente acessa sem pedir permissão.
+  extraDirs?: string[]
   onEvent: (e: AgentEvent) => void
   // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
   onAsk: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
@@ -53,6 +55,7 @@ export function start(o: StartOptions): Session {
       cwd: o.cwd,
       model: o.model,
       resume: o.resume ?? undefined,
+      additionalDirectories: o.extraDirs,
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
       permissionMode: 'acceptEdits',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },

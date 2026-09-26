@@ -44,6 +44,17 @@ app.post<{ Params: { id: string }; Body: { url: string } }>('/api/workspaces/:id
 app.get<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name/removal', async (req) => ({
   reasons: await ws.removalBlockers(req.params.id, req.params.name),
 }))
+app.put<{ Params: { id: string; name: string }; Body: { command: string | null } }>('/api/workspaces/:id/repos/:name/test', async (req) => {
+  ws.setTestCommand(req.params.id, req.params.name, req.body.command)
+  return ws.getWorkspace(req.params.id)
+})
+app.get<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name/env', async (req) => ({
+  content: ws.repoEnv(req.params.id, req.params.name),
+}))
+app.put<{ Params: { id: string; name: string }; Body: { content: string } }>('/api/workspaces/:id/repos/:name/env', async (req) => {
+  await ws.setRepoEnv(req.params.id, req.params.name, req.body.content ?? '')
+  return ws.getWorkspace(req.params.id)
+})
 app.delete<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name', async (req) => {
   await ws.removeRepo(req.params.id, req.params.name)
   return ws.getWorkspace(req.params.id)

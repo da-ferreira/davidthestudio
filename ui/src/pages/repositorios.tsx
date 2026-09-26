@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router'
-import { FileText, RefreshCw, Trash2 } from 'lucide-react'
+import { FileText, RefreshCw, Settings2, Trash2 } from 'lucide-react'
 import type { ContextFiles, RepoStatus, WorkspaceDetail } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
@@ -28,6 +29,7 @@ export function Repositorios() {
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<RepoStatus | null>(null)
+  const [configuring, setConfiguring] = useState<RepoStatus | null>(null)
   const [scanning, setScanning] = useState(false)
 
   const rescan = () => {
@@ -79,8 +81,9 @@ export function Repositorios() {
                   <TableHead className="pl-4">Nome</TableHead>
                   <TableHead>Branch</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead>Testes</TableHead>
                   <TableHead>Remote</TableHead>
-                  <TableHead className="w-12" />
+                  <TableHead className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -91,10 +94,19 @@ export function Repositorios() {
                     <TableCell>
                       <RepoState repo={r} />
                     </TableCell>
+                    <TableCell className="font-mono text-[12px]">
+                      {r.test ?? <span className="text-muted-foreground">—</span>}
+                      {r.hasEnv && <Badge className="ml-2 bg-blue-50 font-sans text-blue-700">.env</Badge>}
+                    </TableCell>
                     <TableCell className="max-w-[320px] truncate font-mono text-[12px] text-muted-foreground">
                       {r.remote ?? '—'}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {r.present && (
+                        <Button variant="ghost" size="icon-sm" aria-label={`Configurar ${r.name}`} onClick={() => setConfiguring(r)}>
+                          <Settings2 className="text-muted-foreground" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon-sm" aria-label={`Remover ${r.name}`} onClick={() => setRemoving(r)}>
                         <Trash2 className="text-muted-foreground" />
                       </Button>
@@ -107,6 +119,7 @@ export function Repositorios() {
         )}
       </div>
       {ws && <AddRepoSheet open={adding} onOpenChange={setAdding} wsId={ws.id} onDone={setWs} />}
+      {ws && <RepoConfigSheet repo={configuring} wsId={ws.id} onClose={() => setConfiguring(null)} onDone={setWs} />}
       {ws && <RemoveRepoDialog repo={removing} wsId={ws.id} onClose={() => setRemoving(null)} onDone={setWs} />}
     </>
   )
@@ -174,6 +187,99 @@ function AddRepoSheet({
           <SheetFooter>
             <Button type="submit" disabled={!url.trim() || busy}>
               {busy ? 'Clonando…' : 'Clonar'}
+            </Button>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function RepoConfigSheet({
+  repo,
+  wsId,
+  onClose,
+  onDone,
+}: {
+  repo: RepoStatus | null
+  wsId: string
+  onClose: () => void
+  onDone: (ws: WorkspaceDetail) => void
+}) {
+  const [test, setTest] = useState('')
+  const [env, setEnv] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setError(null)
+    setEnv(null)
+    if (!repo) return
+    setTest(repo.test ?? '')
+    api<{ content: string | null }>(`/workspaces/${wsId}/repos/${encodeURIComponent(repo.name)}/env`)
+      .then((r) => setEnv(r.content ?? ''))
+      .catch((e) => setError(e.message))
+  }, [repo, wsId])
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!repo) return
+    const base = `/workspaces/${wsId}/repos/${encodeURIComponent(repo.name)}`
+    setBusy(true)
+    setError(null)
+    try {
+      await api(`${base}/test`, { method: 'PUT', body: { command: test.trim() || null } })
+      onDone(await api<WorkspaceDetail>(`${base}/env`, { method: 'PUT', body: { content: env ?? '' } }))
+      onClose()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet open={!!repo} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent className="sm:max-w-[480px]">
+        <form onSubmit={submit} className="flex h-full flex-col">
+          <SheetHeader>
+            <SheetTitle>{repo?.name}</SheetTitle>
+            <SheetDescription>Como os testes deste repositório rodam nos tickets.</SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-1 flex-col gap-6 overflow-auto px-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="repo-test">Comando de teste</Label>
+              <Input
+                id="repo-test"
+                placeholder="npm test"
+                className="font-mono text-[13px]"
+                value={test}
+                onChange={(e) => setTest(e.target.value)}
+              />
+              <span className="text-[12.5px] text-muted-foreground">
+                Roda na pasta do repositório dentro do ticket. Passa se terminar com código 0. Vazio: o repositório fica sem testes.
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="repo-env">.env</Label>
+              <Textarea
+                id="repo-env"
+                disabled={env === null}
+                placeholder="DATABASE_URL=..."
+                spellCheck={false}
+                className="min-h-[220px] resize-y font-mono text-[12.5px]"
+                value={env ?? ''}
+                onChange={(e) => setEnv(e.target.value)}
+              />
+              <span className="text-[12.5px] text-muted-foreground">
+                Fica só no repositório principal, fora do git. Entra no processo dos testes; o agente não vê.
+              </span>
+            </div>
+            {error && <p className="text-[13px] text-destructive">{error}</p>}
+          </div>
+          <SheetFooter>
+            <Button type="submit" disabled={busy || env === null}>
+              {busy ? 'Salvando…' : 'Salvar'}
             </Button>
           </SheetFooter>
         </form>

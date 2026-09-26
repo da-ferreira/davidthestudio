@@ -10,6 +10,8 @@ export type ManifestRepo = {
   name: string
   remote: string | null
   defaultBranch: string
+  // Comando que roda os testes na worktree. Ausente: ainda não sugerido; null: o humano deixou sem.
+  test?: string | null
 }
 
 export type Workspace = {
@@ -24,6 +26,7 @@ export type RepoStatus = ManifestRepo & {
   branch: string | null
   changes: number
   unpushed: string[]
+  hasEnv: boolean
 }
 
 // Como os agentes leem o contexto da raiz do workspace. 'unified': CLAUDE.md só importa o
