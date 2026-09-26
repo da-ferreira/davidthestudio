@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 import type { ApiError, DocStage, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
+import * as codex from './codex-login.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
 import * as tickets from './tickets.ts'
@@ -22,6 +23,20 @@ app.setErrorHandler((err, _req, reply) => {
 
 app.get('/api/health', async (): Promise<Health> => ({ ok: true, version: '0.0.0' }))
 
+app.get('/api/codex', async () => codex.codexStatus())
+app.post('/api/codex/login', async () => ({ url: await codex.startChatGptLogin() }))
+app.post('/api/codex/login/cancel', async () => {
+  codex.cancelLogin()
+  return { ok: true }
+})
+app.post<{ Body: { key: string } }>('/api/codex/api-key', async (req) => {
+  await codex.loginWithApiKey(req.body.key)
+  return { ok: true }
+})
+app.post('/api/codex/logout', async () => {
+  await codex.logout()
+  return { ok: true }
+})
 app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
 app.get<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => ws.getWorkspace(req.params.id))

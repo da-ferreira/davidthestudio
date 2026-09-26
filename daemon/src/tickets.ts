@@ -2,8 +2,10 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentEvent, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
+import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
+import * as codex from './agents/codex.ts'
+import { codexStatus } from './codex-login.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
@@ -29,6 +31,7 @@ type Row = {
   title: string
   description: string
   repos: string
+  agent: AgentKind
   model: string
   status: TicketStatus
   branch: string
@@ -47,6 +50,7 @@ const toTicket = (r: Row): Ticket => ({
   title: r.title,
   description: r.description,
   repos: JSON.parse(r.repos),
+  agent: r.agent,
   model: r.model,
   status: r.status,
   branch: r.branch,
@@ -143,7 +147,11 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
   const manifestRepos = workspaceRepos(workspaceId)
   const title = input.title?.trim()
   if (!title) throw new HttpError(400, 'Dê um título ao ticket')
-  if (!MODELS.includes(input.model)) throw new HttpError(400, 'Modelo inválido')
+  const agent = input.agent ?? 'claude'
+  if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
+  const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
+  if (agent === 'claude' && !MODELS.includes(model)) throw new HttpError(400, 'Modelo inválido')
+  if (agent === 'codex' && !(await codexStatus()).connected) throw new HttpError(400, 'Conecte o Codex na tela Agentes antes de criar o ticket')
   const repos = [...new Set(input.repos ?? [])]
   if (!repos.length) throw new HttpError(400, 'Escolha ao menos um repositório')
   const gates = DOC_STAGES.filter((st) => input.gates?.includes(st))
@@ -184,9 +192,9 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, model, status, branch, task_dir, stage, gates)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), input.model, branch, taskDir, stage, JSON.stringify(gates))
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates))
 
   const t = getTicket(id)
   const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
@@ -278,6 +286,13 @@ const STAGE_INSTRUCTIONS: Record<Stage, string> = {
   review: 'Etapa atual: Revisão. O humano está revisando o diff; faça só os ajustes que ele pedir.',
 }
 
+// O Codex guarda as instruções da primeira etapa ao retomar a sessão e não aceita que uma mensagem as troque.
+// Por isso a instrução fixa só aponta para a etapa, que vai no começo de cada mensagem do studio.
+const CODEX_STAGES =
+  'O ticket passa pelas etapas Spec, Plano, Implementação e Revisão. Cada mensagem do studio começa com um bloco [Etapa do studio] que define a etapa vigente e o que é permitido nela; siga sempre o bloco mais recente.'
+// O Codex não tem como perguntar no meio do turno; as dúvidas vão para a spec e o humano responde em "Pedir ajuste".
+const CODEX_DOUBTS = 'Não há como perguntar ao humano durante o turno: se faltar informação, termine a spec com uma seção "Dúvidas" listando as perguntas.'
+
 const linkedRepos = (t: Ticket) => t.repos.filter((r) => hasLinkedNodeModules(path.join(t.taskDir, r)))
 
 function linkedNodeModules(t: Ticket) {
@@ -295,26 +310,30 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
     `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
     'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
     ...linkedNodeModules(t),
-    STAGE_INSTRUCTIONS[t.stage],
+    t.agent === 'codex' ? CODEX_STAGES : STAGE_INSTRUCTIONS[t.stage],
   ].join('\n')
+  const stage = [STAGE_INSTRUCTIONS[t.stage], ...(t.stage === 'spec' ? [CODEX_DOUBTS] : [])].join('\n')
   setStatus(t.id, 'running')
 
   let ok = false
-  const session = claude.start({
+  const common = {
     cwd: t.taskDir,
-    prompt,
+    prompt: t.agent === 'codex' ? `[Etapa do studio]\n${stage}\n\n${prompt}` : prompt,
     model: t.model,
     instructions,
     resume,
     writableDir: isDocStage(t.stage) ? path.join(t.taskDir, DOCS_DIR) : undefined,
-    // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
-    extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
-    onEvent: (e) => {
+    onEvent: (e: AgentEvent) => {
       if (e.type === 'result' && stopping.has(t.id)) e = { ...e, ok: false, error: 'parado por você' }
       record(t.id, e)
       if (e.type === 'start') setStatus(t.id, 'running', e.sessionId)
       if (e.type === 'result') ok = e.ok
     },
+  }
+  const session = t.agent === 'codex' ? codex.start({ ...common, secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
+    ...common,
+    // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
+    extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
     onAsk: (askId, ask, signal) =>
       new Promise((resolve) => {
         asks.set(askId, { ticket: t.id, resolve })
@@ -327,7 +346,7 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
 
   session.done
     .catch((err) => {
-      if (!stopping.has(t.id)) record(t.id, { type: 'result', ok: false, costUsd: 0, durationMs: 0, turns: 0, error: String(err?.message ?? err) })
+      if (!stopping.has(t.id)) record(t.id, { type: 'result', ok: false, durationMs: 0, turns: 0, error: String(err?.message ?? err) })
       ok = false
     })
     .then(() => {
@@ -467,7 +486,7 @@ export async function commitTicket(id: string, input: string) {
   assertIdle(t)
   const subject = input?.trim()
   if (!subject) throw new HttpError(400, 'Escreva a mensagem do commit')
-  const message = `${subject}\n\nTicket ${t.id} do david the studio.\n\nCo-Authored-By: Claude <noreply@anthropic.com>`
+  const message = `${subject}\n\nTicket ${t.id} do david the studio.\n\nCo-Authored-By: ${t.agent === 'codex' ? 'Codex <noreply@openai.com>' : 'Claude <noreply@anthropic.com>'}`
 
   const dirs = t.repos.map((repo) => ({ repo, dir: path.join(t.taskDir, repo) }))
   const toCommit: typeof dirs = []
@@ -519,7 +538,7 @@ export async function openPrs(id: string) {
       t.description,
       docs.spec && `## Spec\n\n${docs.spec.trim()}`,
       docs.plan && `## Plano\n\n${docs.plan.trim()}`,
-      `Ticket ${t.id} do david the studio, feito com Claude Code.`,
+      `Ticket ${t.id} do david the studio, feito com ${t.agent === 'codex' ? 'Codex' : 'Claude Code'}.`,
     ]
       .filter(Boolean)
       .join('\n\n')

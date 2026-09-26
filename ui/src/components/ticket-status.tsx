@@ -19,7 +19,10 @@ export const MODELS = [
   { id: 'haiku', label: 'Haiku' },
 ]
 
-export const modelLabel = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id
+const modelLabel = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id
+
+export const agentLabel = (t: Pick<Ticket, 'agent' | 'model'>) =>
+  t.agent === 'codex' ? `Codex · ${t.model || 'padrão da conta'}` : `Claude Code · ${modelLabel(t.model)}`
 
 export function TicketStatusBadge({ status }: { status: TicketStatus }) {
   const s = STATUS[status]

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
-import { Check, GitBranch } from 'lucide-react'
-import type { DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
+import { Link, useNavigate, useParams } from 'react-router'
+import { Check, GitBranch, TriangleAlert } from 'lucide-react'
+import type { AgentKind, CodexStatus, DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -20,7 +21,10 @@ export function NovoTicket() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [repos, setRepos] = useState<string[]>([])
+  const [agent, setAgent] = useState<AgentKind>('claude')
   const [model, setModel] = useState('opus')
+  const [codexModel, setCodexModel] = useState('')
+  const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [sdd, setSdd] = useState(true)
   const [gates, setGates] = useState<DocStage[]>(['spec', 'plan'])
   const [error, setError] = useState<string | null>(null)
@@ -34,13 +38,17 @@ export function NovoTicket() {
     })
   }, [id])
 
+  useEffect(() => {
+    if (agent === 'codex') api<CodexStatus>('/codex').then(setCodex)
+  }, [agent])
+
   const toggle = (name: string) => setRepos((rs) => (rs.includes(name) ? rs.filter((r) => r !== name) : [...rs, name]))
 
   async function submit() {
     setBusy(true)
     setError(null)
     try {
-      const t = await api<Ticket>(`/workspaces/${id}/tickets`, { method: 'POST', body: { title, description, repos, model, sdd, gates } })
+      const t = await api<Ticket>(`/workspaces/${id}/tickets`, { method: 'POST', body: { title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates } })
       navigate(`/w/${id}/tickets/${t.id}`)
     } catch (err) {
       setError((err as Error).message)
@@ -97,22 +105,54 @@ export function NovoTicket() {
         <aside className="flex w-[340px] shrink-0 flex-col gap-6 border-l border-sidebar-border px-6 py-6">
           <div className="flex flex-col gap-2">
             <Label>Agente</Label>
-            <div className="flex h-9 items-center rounded-lg border px-3 text-muted-foreground">Claude Code</div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Modelo</Label>
-            <Select value={model} onValueChange={setModel}>
+            <Select value={agent} onValueChange={(v) => setAgent(v as AgentKind)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.label}
-                  </SelectItem>
-                ))}
+                <SelectItem value="claude">Claude Code</SelectItem>
+                <SelectItem value="codex">Codex</SelectItem>
               </SelectContent>
             </Select>
+            {agent === 'codex' && codex && !codex.connected && (
+              <span className="text-[13px] text-destructive">
+                O Codex não está conectado.{' '}
+                <Link to="/agentes" className="underline">
+                  Conectar
+                </Link>
+              </span>
+            )}
+            {agent === 'codex' && (
+              <div className="flex items-start gap-2.5 rounded-[10px] bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  O Codex não pede permissão: roda sozinho numa sandbox que só grava na pasta da tarefa, com internet e sem acesso aos .env. Dúvidas
+                  vão para a spec.
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Modelo</Label>
+            {agent === 'codex' ? (
+              <>
+                <Input placeholder="Padrão da conta" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="font-mono" />
+                <span className="text-[13px] text-muted-foreground">Vazio usa o modelo padrão da sua conta no Codex.</span>
+              </>
+            ) : (
+              <Select value={model} onValueChange={setModel}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODELS.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="flex flex-col gap-3">
             <Label>Etapas</Label>
@@ -147,7 +187,7 @@ export function NovoTicket() {
             <Button variant="outline" size="lg" className="flex-1" onClick={() => navigate(`/w/${id}/tickets`)}>
               Cancelar
             </Button>
-            <Button size="lg" className="flex-[2]" disabled={!title.trim() || !repos.length || busy} onClick={submit}>
+            <Button size="lg" className="flex-[2]" disabled={!title.trim() || !repos.length || busy || (agent === 'codex' && !codex?.connected)} onClick={submit}>
               {busy ? 'Criando worktrees…' : 'Criar e iniciar'}
             </Button>
           </div>

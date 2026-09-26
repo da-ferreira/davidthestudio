@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Topbar } from '@/components/topbar'
-import { TicketStatusBadge, modelLabel } from '@/components/ticket-status'
+import { TicketStatusBadge, agentLabel } from '@/components/ticket-status'
 import { stageLabel } from '@/components/stages'
 import { api } from '@/lib/api'
 
@@ -66,7 +66,7 @@ export function Tickets() {
                   <TableHead className="w-24 pl-4">Ticket</TableHead>
                   <TableHead>Título</TableHead>
                   <TableHead>Repositórios</TableHead>
-                  <TableHead>Modelo</TableHead>
+                  <TableHead>Agente</TableHead>
                   <TableHead className="text-right">PRs</TableHead>
                   <TableHead>Etapa</TableHead>
                   <TableHead>Estado</TableHead>
@@ -81,7 +81,7 @@ export function Tickets() {
                     </TableCell>
                     <TableCell className="font-medium">{t.title}</TableCell>
                     <TableCell className="text-muted-foreground">{t.repos.join(', ')}</TableCell>
-                    <TableCell className="text-muted-foreground">{modelLabel(t.model)}</TableCell>
+                    <TableCell className="text-muted-foreground">{agentLabel(t)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{stageLabel(t.stage)}</TableCell>
                     <TableCell>

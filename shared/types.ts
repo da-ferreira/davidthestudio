@@ -1,5 +1,7 @@
 export type Health = { ok: true; version: string }
 
+export type CodexStatus = { connected: boolean; method: 'chatgpt' | 'apikey' | null; loggingIn: boolean }
+
 // Formato do workspace.json na raiz do workspace.
 export type Manifest = {
   name: string
@@ -47,12 +49,16 @@ export type Stage = 'spec' | 'plan' | 'implement' | 'review'
 // Etapas que produzem documento e podem parar para aprovação.
 export type DocStage = 'spec' | 'plan'
 
+export type AgentKind = 'claude' | 'codex'
+
 export type Ticket = {
   id: string
   workspaceId: string
   title: string
   description: string
   repos: string[]
+  agent: AgentKind
+  // No Codex, vazio é o modelo padrão da conta.
   model: string
   status: TicketStatus
   branch: string
@@ -67,7 +73,7 @@ export type Ticket = {
 }
 
 // sdd false: ticket rápido, começa direto na implementação.
-export type NewTicket = { title: string; description: string; repos: string[]; model: string; sdd: boolean; gates: DocStage[] }
+export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[] }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
 export type TicketDocs = Record<DocStage, string | null>
@@ -79,7 +85,8 @@ export type AgentEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; error: boolean; output: string }
-  | { type: 'result'; ok: boolean; costUsd: number; durationMs: number; turns: number; error?: string }
+  // Claude informa custo em US$; Codex, só tokens.
+  | { type: 'result'; ok: boolean; costUsd?: number; tokens?: number; durationMs: number; turns: number; error?: string }
   | { type: 'ask'; id: string; ask: Ask }
   | { type: 'answer'; id: string; reply: Reply }
   // Ações do próprio studio (commit, PR), para ficarem no histórico do ticket.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router'
-import { ArrowLeft, FolderGit2, LayoutGrid, Ticket } from 'lucide-react'
+import { ArrowLeft, Bot, FolderGit2, LayoutGrid, Ticket } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import {
   Sidebar,
@@ -45,6 +45,16 @@ function GlobalNav() {
                 <SidebarMenuButton isActive={isActive}>
                   <LayoutGrid />
                   Workspaces
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <NavLink to="/agentes">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive}>
+                  <Bot />
+                  Agentes
                 </SidebarMenuButton>
               )}
             </NavLink>

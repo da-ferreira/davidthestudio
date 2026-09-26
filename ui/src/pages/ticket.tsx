@@ -13,7 +13,7 @@ import { TestsPanel } from '@/components/tests-panel'
 import { StageStepper, hasSdd } from '@/components/stages'
 import { Markdown } from '@/components/markdown'
 import { CloseTicketButton } from '@/components/close-ticket'
-import { TicketStatusBadge, isActive, isClosed, modelLabel } from '@/components/ticket-status'
+import { TicketStatusBadge, isActive, isClosed, agentLabel } from '@/components/ticket-status'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -76,7 +76,7 @@ export function Ticket() {
                   {ticket.branch}
                 </Badge>
                 <Badge variant="outline" className="h-6 font-normal">
-                  Claude Code · {modelLabel(ticket.model)}
+                  {agentLabel(ticket)}
                 </Badge>
                 <span>criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
               </div>
@@ -177,7 +177,8 @@ function LogLine({ at, event, strip }: { at: string; event: AgentEvent; strip: (
       'text-violet-700',
     )
   if (event.type === 'result') {
-    const summary = `${(event.durationMs / 1000).toFixed(0)} s · ${event.turns} turnos · US$ ${event.costUsd.toFixed(2)}`
+    const spent = event.costUsd !== undefined ? `US$ ${event.costUsd.toFixed(2)}` : event.tokens !== undefined ? `${event.tokens.toLocaleString('pt-BR')} tokens` : null
+    const summary = [`${(event.durationMs / 1000).toFixed(0)} s`, `${event.turns} turnos`, spent].filter(Boolean).join(' · ')
     return event.ok
       ? row('', `✓ concluído · ${summary}`, 'text-green-600')
       : row('', `✗ ${event.error ?? 'falhou'}`, 'text-red-600')
@@ -219,7 +220,7 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
     <aside className="flex w-[440px] shrink-0 flex-col gap-4 border-l border-sidebar-border px-5 py-5">
       <div className="flex items-center gap-2.5">
         <span className="font-medium">Chat</span>
-        <span className="text-[13px] text-muted-foreground">Claude Code · {modelLabel(ticket.model)}</span>
+        <span className="text-[13px] text-muted-foreground">{agentLabel(ticket)}</span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
         {messages.map(({ seq, event }) =>
