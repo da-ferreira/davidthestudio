@@ -6,7 +6,8 @@ import { gitEnv } from './connections.ts'
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
-import { excludeFromGit, suggestTest } from './node-deps.ts'
+import { suggestTest } from './node-deps.ts'
+import { open, seal } from './secrets.ts'
 import { deleteTickets, openTickets, ticketsUsingRepo } from './tickets.ts'
 
 type Row = { id: string; name: string; path: string }
@@ -101,6 +102,7 @@ export function removeWorkspace(id: string) {
   const open = openTickets(id)
   if (open.length) throw new HttpError(409, 'Há tickets abertos neste workspace', open.map((t) => `${t} ainda tem worktrees; encerre ou descarte antes`))
   deleteTickets(id)
+  db.prepare('DELETE FROM repo_envs WHERE workspace_id = ?').run(id)
   db.prepare('DELETE FROM workspaces WHERE id = ?').run(id)
 }
 
@@ -136,15 +138,15 @@ export function unifyContext(id: string) {
 export async function getWorkspace(id: string): Promise<WorkspaceDetail> {
   const row = getRow(id)
   const manifest = manifestOf(row)
-  const repos = await Promise.all(manifest.repos.map((r) => repoStatus(row.path, r)))
+  const repos = await Promise.all(manifest.repos.map((r) => repoStatus(row.id, row.path, r)))
   return { ...row, repoCount: repos.length, repos, context: contextFiles(row.path) }
 }
 
-async function repoStatus(root: string, repo: ManifestRepo): Promise<RepoStatus> {
+async function repoStatus(id: string, root: string, repo: ManifestRepo): Promise<RepoStatus> {
   const dir = path.join(root, repo.name)
   if (!fs.existsSync(path.join(dir, '.git'))) return { ...repo, present: false, branch: null, changes: 0, unpushed: [], hasEnv: false }
   const [branch, changes, unpushed] = await Promise.all([g.currentBranch(dir), g.changedFiles(dir), g.unpushedBranches(dir)])
-  return { ...repo, present: true, branch, changes, unpushed, hasEnv: fs.existsSync(path.join(dir, ENV)) }
+  return { ...repo, present: true, branch, changes, unpushed, hasEnv: !!storedEnv(id, repo.name, dir) }
 }
 
 export async function addRepo(id: string, url: string, user: User): Promise<void> {
@@ -187,6 +189,7 @@ export async function removeRepo(id: string, name: string): Promise<void> {
   const reasons = await removalBlockers(id, name)
   if (reasons.length) throw new HttpError(409, 'O repositório tem trabalho que seria perdido', reasons)
   fs.rmSync(path.join(row.path, name), { recursive: true, force: true })
+  db.prepare('DELETE FROM repo_envs WHERE workspace_id = ? AND repo = ?').run(id, name)
   manifest.repos = manifest.repos.filter((r) => r.name !== name)
   writeManifest(row.path, manifest)
 }
@@ -207,15 +210,28 @@ export function setTestCommand(id: string, name: string, command: string | null)
 }
 
 
-export function repoEnv(id: string, name: string): string | null {
-  return readIf(path.join(presentRepo(id, name).dir, ENV))
+// O .env do studio fica criptografado no banco. Um .env que já existia no repo entra na
+// primeira leitura; o arquivo fica onde está, porque pode ser o do desenvolvimento local.
+function storedEnv(id: string, name: string, dir: string): string | null {
+  const row = db.prepare('SELECT content FROM repo_envs WHERE workspace_id = ? AND repo = ?').get(id, name) as { content: string } | undefined
+  if (row) return open(row.content) || null
+  const file = readIf(path.join(dir, ENV))
+  if (file === null) return null
+  saveEnv(id, name, file)
+  return file || null
 }
 
-// Fica só no repo principal: o executor de testes injeta no processo do teste, o agente não vê.
-export async function setRepoEnv(id: string, name: string, content: string) {
-  const { dir } = presentRepo(id, name)
-  const file = path.join(dir, ENV)
-  if (!content.trim()) return fs.rmSync(file, { force: true })
-  await excludeFromGit(dir, `/${ENV}`)
-  fs.writeFileSync(file, content.endsWith('\n') ? content : content + '\n', { mode: 0o600 })
+function saveEnv(id: string, name: string, content: string) {
+  db.prepare('INSERT OR REPLACE INTO repo_envs (workspace_id, repo, content) VALUES (?, ?, ?)').run(id, name, seal(content))
+}
+
+export function repoEnv(id: string, name: string): string | null {
+  return storedEnv(id, name, presentRepo(id, name).dir)
+}
+
+// Só o executor de testes usa, injetando no processo do teste; o agente não vê.
+// Apagar grava vazio em vez de remover, para o .env antigo do repo não voltar na próxima leitura.
+export function setRepoEnv(id: string, name: string, content: string) {
+  presentRepo(id, name)
+  saveEnv(id, name, !content.trim() ? '' : content.endsWith('\n') ? content : content + '\n')
 }

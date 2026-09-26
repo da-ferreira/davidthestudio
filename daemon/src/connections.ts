@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { AgentKind, AgentStatus, Connections, GithubStatus } from '@studio/shared'
 import { DATA_DIR, db } from './db.ts'
 import { HttpError } from './http-error.ts'
+import { isSealed, open, seal } from './secrets.ts'
 
 // Os mesmos executáveis que os SDKs usam. Nunca "npx codex": no npm esse nome é de outro pacote.
 const codexSdk = fileURLToPath(import.meta.resolve('@openai/codex-sdk'))
@@ -31,12 +32,17 @@ function home(user: Owner, agent: AgentKind) {
   return dir
 }
 
+// Linhas gravadas antes da criptografia existir.
+for (const r of db.prepare('SELECT user_id, kind, secret FROM credentials').all() as { user_id: string; kind: string; secret: string }[])
+  if (!isSealed(r.secret)) db.prepare('UPDATE credentials SET secret = ? WHERE user_id = ? AND kind = ?').run(seal(r.secret), r.user_id, r.kind)
+
 function credential(userId: string, kind: 'anthropic' | 'github') {
-  return db.prepare('SELECT secret, account FROM credentials WHERE user_id = ? AND kind = ?').get(userId, kind) as { secret: string; account: string } | undefined
+  const row = db.prepare('SELECT secret, account FROM credentials WHERE user_id = ? AND kind = ?').get(userId, kind) as { secret: string; account: string } | undefined
+  return row && { secret: open(row.secret), account: row.account }
 }
 
 function saveCredential(userId: string, kind: 'anthropic' | 'github', secret: string, account: string) {
-  db.prepare('INSERT OR REPLACE INTO credentials (user_id, kind, secret, account) VALUES (?, ?, ?, ?)').run(userId, kind, secret, account)
+  db.prepare('INSERT OR REPLACE INTO credentials (user_id, kind, secret, account) VALUES (?, ?, ?, ?)').run(userId, kind, seal(secret), account)
 }
 
 function dropCredential(userId: string, kind: 'anthropic' | 'github') {

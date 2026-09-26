@@ -52,9 +52,9 @@ export async function linkNodeModules(repo: string, worktree: string) {
   await excludeFromGit(repo, '/node_modules')
 }
 
-// O .gitignore costuma ter "node_modules/", que não pega um symlink; e um .env criado
-// pela tela não pode entrar num commit. O info/exclude vale para o repo e todas as worktrees.
-export async function excludeFromGit(repo: string, pattern: string) {
+// O .gitignore costuma ter "node_modules/", que não pega um symlink.
+// O info/exclude vale para o repo e todas as worktrees.
+async function excludeFromGit(repo: string, pattern: string) {
   const file = path.join(path.resolve(repo, await g.git(repo, ['rev-parse', '--git-common-dir'])), 'info', 'exclude')
   const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
   if (current.split('\n').includes(pattern)) return

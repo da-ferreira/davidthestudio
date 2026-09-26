@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import fs from 'node:fs'
 import path from 'node:path'
 import type { ManifestRepo, TestRun, TestStatus, TestWarning, Ticket } from '@studio/shared'
 import { db } from './db.ts'
@@ -7,7 +6,7 @@ import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
 import { installCommand, markInstalled } from './node-deps.ts'
 import { assertIdle, emit, getTicket, record, sendMessage } from './tickets.ts'
-import { workspaceRepos, workspaceRoot } from './workspaces.ts'
+import { repoEnv, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TIMEOUT_MS = 10 * 60_000
 // Guarda o fim da saída: é onde ficam o resumo e a falha.
@@ -102,7 +101,7 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
     run.output = (run.output + chunk).slice(-MAX_OUTPUT)
     emit(t.id, { kind: 'test-output', runId: id, chunk })
   }
-  const env = { ...process.env, ...readEnv(path.join(mainDir, '.env')), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
+  const env = { ...process.env, ...parseEnv(repoEnv(t.workspaceId, repo.name) ?? ''), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
 
   let status: TestStatus
   let code: number | null = null
@@ -218,10 +217,9 @@ function exec(
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
 
 // KEY=valor por linha; aceita "export", comentários e aspas.
-function readEnv(file: string): Record<string, string> {
-  if (!fs.existsSync(file)) return {}
+function parseEnv(content: string): Record<string, string> {
   const env: Record<string, string> = {}
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const line of content.split('\n')) {
     const m = line.match(/^\s*(?:export\s+)?([\w.-]+)\s*=\s*(.*?)\s*$/)
     if (!m) continue
     let value = m[2]

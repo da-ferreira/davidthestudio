@@ -87,6 +87,12 @@ db.exec(`
     account TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
   );
+  CREATE TABLE IF NOT EXISTS repo_envs (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    repo TEXT NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, repo)
+  );
 `)
 
 // Colunas acrescentadas depois da criação da tabela.

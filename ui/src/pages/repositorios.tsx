@@ -272,7 +272,7 @@ function RepoConfigSheet({
                 onChange={(e) => setEnv(e.target.value)}
               />
               <span className="text-[12.5px] text-muted-foreground">
-                Fica só no repositório principal, fora do git. Entra no processo dos testes; o agente não vê.
+                Fica criptografado no studio, fora do git e do repositório. Entra no processo dos testes; o agente não vê.
               </span>
             </div>
             {error && <p className="text-[13px] text-destructive">{error}</p>}

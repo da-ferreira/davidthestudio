@@ -149,7 +149,7 @@ app.get<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:na
   content: ws.repoEnv(req.params.id, req.params.name),
 }))
 app.put<{ Params: { id: string; name: string }; Body: { content: string } }>('/api/workspaces/:id/repos/:name/env', async (req) => {
-  await ws.setRepoEnv(req.params.id, req.params.name, req.body.content ?? '')
+  ws.setRepoEnv(req.params.id, req.params.name, req.body.content ?? '')
   return ws.getWorkspace(req.params.id)
 })
 app.delete<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name', async (req) => {
