@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, NewTicket, Reply, Ticket, TicketDetail, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
+import { promisify } from 'node:util'
+import type { AgentEvent, NewTicket, RepoDiff, Reply, Ticket, TicketDetail, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
@@ -23,6 +25,7 @@ type Row = {
   branch: string
   task_dir: string
   session_id: string | null
+  prs: string
   created_at: string
 }
 
@@ -37,6 +40,7 @@ const toTicket = (r: Row): Ticket => ({
   branch: r.branch,
   taskDir: r.task_dir,
   sessionId: r.session_id,
+  prs: JSON.parse(r.prs),
   createdAt: r.created_at,
 })
 
@@ -258,4 +262,105 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
       if (next) return run(getTicket(t.id), next.join('\n\n'), getTicket(t.id).sessionId)
       setStatus(t.id, ok ? 'done' : 'error')
     })
+}
+
+const exec = promisify(execFile)
+
+function assertIdle(t: Ticket) {
+  if (t.status === 'running' || t.status === 'waiting') throw new HttpError(409, 'Pare o agente ou espere ele terminar antes')
+}
+
+function baseBranchOf(t: Ticket, repo: string) {
+  return workspaceRepos(t.workspaceId).find((r) => r.name === repo)?.defaultBranch ?? 'main'
+}
+
+export async function getDiff(id: string): Promise<RepoDiff[]> {
+  const t = getTicket(id)
+  return Promise.all(
+    t.repos.map(async (repo) => {
+      const dir = path.join(t.taskDir, repo)
+      const baseBranch = baseBranchOf(t, repo)
+      const base = await g.forkPoint(dir, baseBranch)
+      const [files, uncommitted, commits, unpushed] = await Promise.all([
+        g.worktreeDiff(dir, base),
+        g.changedFiles(dir),
+        g.commitsSince(dir, base),
+        g.unpushedCount(dir, t.branch, base),
+      ])
+      return { repo, base: baseBranch, files, uncommitted, commits, unpushed, pr: t.prs[repo] ?? null }
+    }),
+  )
+}
+
+// Commit com a identidade git da máquina (quem aprovou) e o agente como coautor.
+export async function commitTicket(id: string, input: string) {
+  const t = getTicket(id)
+  assertIdle(t)
+  const subject = input?.trim()
+  if (!subject) throw new HttpError(400, 'Escreva a mensagem do commit')
+  const message = `${subject}\n\nTicket ${t.id} do david the studio.\n\nCo-Authored-By: Claude <noreply@anthropic.com>`
+
+  const dirs = t.repos.map((repo) => ({ repo, dir: path.join(t.taskDir, repo) }))
+  const toCommit: typeof dirs = []
+  for (const d of dirs) {
+    if (!(await g.changedFiles(d.dir))) continue
+    await g.git(d.dir, ['add', '-A'])
+    const secrets = (await g.git(d.dir, ['diff', '--cached', '--name-only'])).split('\n').filter((f) => SECRET.test(path.basename(f)))
+    if (secrets.length) {
+      await g.git(d.dir, ['reset', '-q'])
+      throw new HttpError(400, 'Há arquivos que parecem segredos; tire-os antes de commitar', secrets.map((f) => `${d.repo}/${f}`))
+    }
+    toCommit.push(d)
+  }
+  if (!toCommit.length) throw new HttpError(400, 'Não há mudanças para commitar')
+  for (const d of toCommit) {
+    await g.git(d.dir, ['commit', '-q', '-m', message])
+    const sha = await g.git(d.dir, ['rev-parse', '--short', 'HEAD'])
+    record(id, { type: 'note', text: `commit ${sha} em ${d.repo}: ${subject}` })
+  }
+}
+
+// Um PR por repo com commits. Se o PR já existe, só sobe os commits novos.
+export async function openPrs(id: string) {
+  const t = getTicket(id)
+  assertIdle(t)
+  const prs = { ...t.prs }
+  let acted = 0
+  for (const repo of t.repos) {
+    const dir = path.join(t.taskDir, repo)
+    const baseBranch = baseBranchOf(t, repo)
+    const base = await g.forkPoint(dir, baseBranch)
+    const unpushed = await g.unpushedCount(dir, t.branch, base)
+    if (!(await g.commitsSince(dir, base)).length || (!unpushed && prs[repo])) continue
+    if (!(await g.remoteUrl(dir))) throw new HttpError(400, `${repo} não tem remote origin`)
+    if (unpushed) {
+      try {
+        await g.git(dir, ['push', '-q', '-u', 'origin', t.branch])
+      } catch (err) {
+        throw new HttpError(400, `Falha no push de ${repo}`, [(err as { stderr?: string }).stderr?.trim() || String(err)])
+      }
+    }
+    acted++
+    if (prs[repo]) {
+      record(id, { type: 'note', text: `push em ${repo}; o PR foi atualizado`, url: prs[repo] })
+      continue
+    }
+    const body = [t.description, `Ticket ${t.id} do david the studio, feito com Claude Code.`].filter(Boolean).join('\n\n')
+    try {
+      const { stdout } = await exec('gh', ['pr', 'create', '--base', baseBranch, '--head', t.branch, '--title', t.title, '--body', body], {
+        cwd: dir,
+        env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+      })
+      prs[repo] = stdout.trim().split('\n').pop()!
+    } catch (err) {
+      const e = err as { code?: string; stderr?: string }
+      if (e.code === 'ENOENT') throw new HttpError(400, 'O GitHub CLI (gh) não está instalado')
+      throw new HttpError(400, `Falha ao abrir o PR de ${repo}`, [e.stderr?.trim() || String(err)])
+    } finally {
+      db.prepare('UPDATE tickets SET prs = ? WHERE id = ?').run(JSON.stringify(prs), id)
+    }
+    record(id, { type: 'note', text: `PR aberto em ${repo}`, url: prs[repo] })
+  }
+  if (!acted) throw new HttpError(400, 'Nada para enviar: commite as mudanças primeiro')
+  emit(id, { kind: 'ticket', ticket: getTicket(id) })
 }

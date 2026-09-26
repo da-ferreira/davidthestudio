@@ -44,6 +44,8 @@ export type Ticket = {
   branch: string
   taskDir: string
   sessionId: string | null
+  // repo -> URL do PR aberto pelo studio
+  prs: Record<string, string>
   createdAt: string
 }
 
@@ -59,6 +61,8 @@ export type AgentEvent =
   | { type: 'result'; ok: boolean; costUsd: number; durationMs: number; turns: number; error?: string }
   | { type: 'ask'; id: string; ask: Ask }
   | { type: 'answer'; id: string; reply: Reply }
+  // Ações do próprio studio (commit, PR), para ficarem no histórico do ticket.
+  | { type: 'note'; text: string; url?: string }
 
 export type Question = {
   question: string
@@ -80,3 +84,15 @@ export type TicketEvent = { seq: number; at: string; event: AgentEvent }
 export type TicketDetail = Ticket & { events: TicketEvent[] }
 
 export type WsMessage = { kind: 'event'; event: TicketEvent } | { kind: 'ticket'; ticket: Ticket }
+
+export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
+
+export type RepoDiff = {
+  repo: string
+  base: string
+  files: FileChange[]
+  uncommitted: number
+  commits: { sha: string; subject: string }[]
+  unpushed: number
+  pr: string | null
+}

@@ -1,4 +1,4 @@
-import type { TicketStatus } from '@studio/shared'
+import type { Ticket, TicketStatus } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
@@ -27,3 +27,5 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
     </Badge>
   )
 }
+
+export const isActive = (t: Ticket) => t.status === 'running' || t.status === 'waiting'

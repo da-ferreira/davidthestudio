@@ -53,6 +53,15 @@ app.post<{ Params: { id: string } }>('/api/tickets/:id/stop', async (req) => {
   await tickets.stopTicket(req.params.id)
   return tickets.getTicket(req.params.id)
 })
+app.get<{ Params: { id: string } }>('/api/tickets/:id/diff', async (req) => tickets.getDiff(req.params.id))
+app.post<{ Params: { id: string }; Body: { message: string } }>('/api/tickets/:id/commit', async (req) => {
+  await tickets.commitTicket(req.params.id, req.body.message)
+  return tickets.getDiff(req.params.id)
+})
+app.post<{ Params: { id: string } }>('/api/tickets/:id/pr', async (req) => {
+  await tickets.openPrs(req.params.id)
+  return tickets.getDiff(req.params.id)
+})
 app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:id/asks/:askId', async (req) => {
   tickets.answerAsk(req.params.id, req.params.askId, req.body)
   return tickets.getTicket(req.params.id)

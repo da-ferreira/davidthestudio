@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
-import { ArrowUp, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
+import { ArrowUp, FileDiff, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
 import type { AgentEvent, Ask, Reply, Ticket as TicketT, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
-import { TicketStatusBadge, modelLabel } from '@/components/ticket-status'
+import { DiffPanel } from '@/components/diff-panel'
+import { TicketStatusBadge, isActive, modelLabel } from '@/components/ticket-status'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -49,7 +51,7 @@ export function Ticket() {
                 <span className="font-mono text-sm text-muted-foreground">{ticket.id}</span>
                 <h1 className="text-2xl font-medium tracking-[-0.025em]">{ticket.title}</h1>
                 <TicketStatusBadge status={ticket.status} />
-                {active(ticket) && <StopButton ticketId={ticket.id} />}
+                {isActive(ticket) && <StopButton ticketId={ticket.id} />}
               </div>
               <div className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
                 <Badge variant="outline" className="h-6 gap-1.5 font-mono font-normal">
@@ -62,7 +64,28 @@ export function Ticket() {
                 <span>criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
               </div>
             </div>
-            <LogPanel ticket={ticket} events={events} strip={strip} />
+            <Tabs defaultValue="log" className="flex min-h-0 flex-1 flex-col gap-3 px-8 py-5">
+              <div className="flex items-center gap-2.5">
+                <TabsList>
+                  <TabsTrigger value="log" className="px-3">
+                    <SquareTerminal />
+                    Log
+                  </TabsTrigger>
+                  <TabsTrigger value="diff" className="px-3">
+                    <FileDiff />
+                    Diff
+                  </TabsTrigger>
+                </TabsList>
+                {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
+                <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>
+              </div>
+              <TabsContent value="log" className="flex min-h-0 flex-col">
+                <LogPanel ticket={ticket} events={events} strip={strip} />
+              </TabsContent>
+              <TabsContent value="diff" className="flex min-h-0 flex-col">
+                <DiffPanel ticket={ticket} />
+              </TabsContent>
+            </Tabs>
           </div>
           <ChatPanel ticket={ticket} events={events} />
         </div>
@@ -78,20 +101,12 @@ function LogPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketEv
   }, [events.length])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-8 py-5">
-      <div className="flex items-center gap-2.5">
-        <SquareTerminal className="size-4" />
-        <span className="font-medium">Log</span>
-        {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
-        <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto rounded-[14px] border border-[#efefef] bg-[#fafafa] px-4 py-3.5 font-mono text-[12.5px]">
-        {events.map((e) => (
-          <LogLine key={e.seq} at={e.at} event={e.event} strip={strip} />
-        ))}
-        {ticket.status === 'running' && <div className="animate-pulse pt-1.5">▍</div>}
-        <div ref={end} />
-      </div>
+    <div className="min-h-0 flex-1 overflow-auto rounded-[14px] border border-[#efefef] bg-[#fafafa] px-4 py-3.5 font-mono text-[12.5px]">
+      {events.map((e) => (
+        <LogLine key={e.seq} at={e.at} event={e.event} strip={strip} />
+      ))}
+      {ticket.status === 'running' && <div className="animate-pulse pt-1.5">▍</div>}
+      <div ref={end} />
     </div>
   )
 }
@@ -108,6 +123,21 @@ function LogLine({ at, event, strip }: { at: string; event: AgentEvent; strip: (
   )
   if (event.type === 'tool') return row(event.name, strip(toolSummary(event)))
   if (event.type === 'tool_result' && event.error) return row('', strip(event.output.split('\n')[0]), 'text-red-600')
+  if (event.type === 'note')
+    return row(
+      'studio',
+      event.url ? (
+        <>
+          {event.text}{' '}
+          <a href={event.url} target="_blank" rel="noreferrer" className="underline">
+            {event.url}
+          </a>
+        </>
+      ) : (
+        event.text
+      ),
+      'text-violet-700',
+    )
   if (event.type === 'result') {
     const summary = `${(event.durationMs / 1000).toFixed(0)} s · ${event.turns} turnos · US$ ${event.costUsd.toFixed(2)}`
     return event.ok
@@ -123,8 +153,6 @@ function toolSummary(e: Extract<AgentEvent, { type: 'tool' }>): string {
   if (e.name === 'AskUserQuestion') return (i.questions as { question: string }[]).map((q) => q.question).join(' · ')
   return s('file_path') || s('command') || s('pattern') || s('url') || s('description') || JSON.stringify(i).slice(0, 160)
 }
-
-const active = (t: TicketT) => t.status === 'running' || t.status === 'waiting'
 
 function StopButton({ ticketId }: { ticketId: string }) {
   const [busy, setBusy] = useState(false)
@@ -341,7 +369,7 @@ function Composer({ ticket }: { ticket: TicketT }) {
               send()
             }
           }}
-          placeholder={active(ticket) ? 'Entra quando o agente terminar o que está fazendo' : 'Continuar a conversa…'}
+          placeholder={isActive(ticket) ? 'Entra quando o agente terminar o que está fazendo' : 'Continuar a conversa…'}
           className="max-h-40 min-h-9 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
           rows={1}
         />
