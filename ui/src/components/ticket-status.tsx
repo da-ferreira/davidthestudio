@@ -1,0 +1,28 @@
+import type { TicketStatus } from '@studio/shared'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+
+const STATUS: Record<TicketStatus, { label: string; className: string }> = {
+  running: { label: 'Rodando', className: 'bg-blue-50 text-blue-700' },
+  done: { label: 'Concluído', className: 'bg-green-50 text-green-700' },
+  error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
+  interrupted: { label: 'Interrompido', className: 'bg-amber-50 text-amber-700' },
+}
+
+export const MODELS = [
+  { id: 'opus', label: 'Opus' },
+  { id: 'sonnet', label: 'Sonnet' },
+  { id: 'haiku', label: 'Haiku' },
+]
+
+export const modelLabel = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id
+
+export function TicketStatusBadge({ status }: { status: TicketStatus }) {
+  const s = STATUS[status]
+  return (
+    <Badge className={cn('gap-1.5', s.className)}>
+      <span className={cn('size-1.5 rounded-full bg-current', status === 'running' && 'animate-pulse')} />
+      {s.label}
+    </Badge>
+  )
+}
