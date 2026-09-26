@@ -7,7 +7,7 @@ import * as claude from './agents/claude.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
-import { workspaceRepos, workspaceRoot } from './workspaces.ts'
+import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TASKS_DIR = path.join(DATA_DIR, 'tasks')
 const MODELS = ['opus', 'sonnet', 'haiku']
@@ -101,6 +101,18 @@ export function ticketsUsingRepo(workspaceId: string, repo: string): string[] {
     .map((t) => t.id)
 }
 
+// Tickets com worktree ainda de pé (não encerrados nem descartados).
+export function openTickets(workspaceId: string): string[] {
+  return listTickets(workspaceId)
+    .filter((t) => t.status !== 'closed' && t.status !== 'discarded')
+    .map((t) => t.id)
+}
+
+export function deleteTickets(workspaceId: string) {
+  db.prepare('DELETE FROM events WHERE ticket_id IN (SELECT id FROM tickets WHERE workspace_id = ?)').run(workspaceId)
+  db.prepare('DELETE FROM tickets WHERE workspace_id = ?').run(workspaceId)
+}
+
 function slugify(s: string) {
   return s
     .normalize('NFD')
@@ -125,7 +137,10 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
     if (!repo || !fs.existsSync(path.join(root, name, '.git'))) throw new HttpError(400, `Repositório ${name} não está disponível`)
   }
 
-  const num = ((db.prepare('SELECT MAX(num) AS n FROM tickets').get() as { n: number | null }).n ?? 0) + 1
+  // Contador do AUTOINCREMENT, não MAX(num): ticket apagado não pode ter o número reusado,
+  // porque a branch studio/stu-N dele continua nos repos.
+  const seq = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'tickets'").get() as { seq: number } | undefined
+  const num = (seq?.seq ?? 0) + 1
   const id = `STU-${num}`
   const branch = ['studio/' + id.toLowerCase(), slugify(title)].filter(Boolean).join('-')
   const taskDir = path.join(TASKS_DIR, id)
@@ -151,9 +166,9 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
   linkContext(root, taskDir, manifestRepos.map((r) => r.name))
 
   db.prepare(
-    `INSERT INTO tickets (id, workspace_id, title, description, repos, model, status, branch, task_dir)
-     VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
-  ).run(id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), input.model, branch, taskDir)
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, model, status, branch, task_dir)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), input.model, branch, taskDir)
 
   const t = getTicket(id)
   const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
@@ -167,8 +182,14 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
 function linkContext(root: string, taskDir: string, repoNames: string[]) {
   for (const entry of fs.readdirSync(root)) {
     if (repoNames.includes(entry) || entry === 'workspace.json' || SECRET.test(entry)) continue
-    fs.symlinkSync(path.join(root, entry), path.join(taskDir, entry))
+    fs.symlinkSync(path.join(root, contextTarget(root, entry)), path.join(taskDir, entry))
   }
+}
+
+// O Claude não resolve o @AGENTS.md de um CLAUDE.md que é symlink. No workspace
+// unificado o CLAUDE.md aponta direto para o AGENTS.md, que tem o mesmo conteúdo.
+function contextTarget(root: string, entry: string) {
+  return entry === 'CLAUDE.md' && isUnified(root) ? 'AGENTS.md' : entry
 }
 
 function record(id: string, event: AgentEvent) {

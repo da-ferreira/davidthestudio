@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router'
-import { Trash2 } from 'lucide-react'
-import type { RepoStatus, WorkspaceDetail } from '@studio/shared'
+import { FileText, RefreshCw, Trash2 } from 'lucide-react'
+import type { ContextFiles, RepoStatus, WorkspaceDetail } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Topbar } from '@/components/topbar'
 import { api, ApiError } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 export function Repositorios() {
   const { id } = useParams()
@@ -27,6 +28,15 @@ export function Repositorios() {
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<RepoStatus | null>(null)
+  const [scanning, setScanning] = useState(false)
+
+  const rescan = () => {
+    setScanning(true)
+    api<WorkspaceDetail>(`/workspaces/${id}/rescan`, { method: 'POST' })
+      .then(setWs)
+      .catch((e) => setError(e.message))
+      .finally(() => setScanning(false))
+  }
 
   const load = useCallback(() => {
     api<WorkspaceDetail>(`/workspaces/${id}`).then(setWs).catch((e) => setError(e.message))
@@ -37,7 +47,17 @@ export function Repositorios() {
     <>
       <Topbar
         crumbs={[ws?.name ?? '…', 'Repositórios']}
-        actions={ws && <Button onClick={() => setAdding(true)}>Adicionar repositório</Button>}
+        actions={
+          ws && (
+            <>
+              <Button variant="outline" disabled={scanning} onClick={rescan}>
+                <RefreshCw className={cn(scanning && 'animate-spin')} />
+                Reescanear
+              </Button>
+              <Button onClick={() => setAdding(true)}>Adicionar repositório</Button>
+            </>
+          )
+        }
       />
       <div className="flex flex-1 flex-col gap-8 px-8 py-7">
         <div>
@@ -45,6 +65,7 @@ export function Repositorios() {
           {ws && <p className="font-mono text-[12px] text-muted-foreground">{ws.path}</p>}
         </div>
         {error && <p className="text-destructive">{error}</p>}
+        {ws && <ContextCard ws={ws} onDone={setWs} />}
         {ws && ws.repos.length === 0 && (
           <div className="rounded-2xl border border-dashed py-16 text-center text-muted-foreground">
             Nenhum repositório neste workspace.
@@ -237,5 +258,52 @@ function RemoveRepoDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  )
+}
+
+const CONTEXT: Record<ContextFiles, { text: string; action?: string }> = {
+  unified: { text: 'Claude e Codex leem o mesmo AGENTS.md; o CLAUDE.md só importa ele.' },
+  claude: {
+    text: 'Só existe CLAUDE.md, que o Codex não lê. Unificar move o conteúdo para AGENTS.md e deixa no CLAUDE.md só o import.',
+    action: 'Unificar',
+  },
+  agents: { text: 'Só existe AGENTS.md, que o Claude não lê sozinho. Unificar cria um CLAUDE.md que importa ele.', action: 'Unificar' },
+  both: { text: 'CLAUDE.md e AGENTS.md têm conteúdos próprios. Junte os dois no AGENTS.md e deixe no CLAUDE.md só a linha @AGENTS.md.' },
+  none: { text: 'Sem CLAUDE.md nem AGENTS.md na raiz do workspace.' },
+}
+
+function ContextCard({ ws, onDone }: { ws: WorkspaceDetail; onDone: (ws: WorkspaceDetail) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const c = CONTEXT[ws.context]
+
+  const unify = () => {
+    setBusy(true)
+    setError(null)
+    api<WorkspaceDetail>(`/workspaces/${ws.id}/context/unify`, { method: 'POST' })
+      .then(onDone)
+      .catch((e) => setError(e.message))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div className="flex items-center gap-3.5 rounded-xl border px-4 py-3.5">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[#f4f4f4]">
+        <FileText className="size-4 text-muted-foreground" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-center gap-2 font-medium">
+          Contexto dos agentes
+          {ws.context === 'unified' && <Badge className="bg-green-50 text-green-700">unificado</Badge>}
+        </div>
+        <span className="text-[13px] text-muted-foreground">{c.text}</span>
+        {error && <span className="text-[13px] text-destructive">{error}</span>}
+      </div>
+      {c.action && (
+        <Button variant="outline" size="sm" disabled={busy} onClick={unify}>
+          {busy ? 'Unificando…' : c.action}
+        </Button>
+      )}
+    </div>
   )
 }

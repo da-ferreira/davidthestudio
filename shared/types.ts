@@ -26,7 +26,11 @@ export type RepoStatus = ManifestRepo & {
   unpushed: string[]
 }
 
-export type WorkspaceDetail = Workspace & { repos: RepoStatus[] }
+// Como os agentes leem o contexto da raiz do workspace. 'unified': CLAUDE.md só importa o
+// AGENTS.md, então Claude e Codex leem o mesmo arquivo.
+export type ContextFiles = 'unified' | 'claude' | 'agents' | 'both' | 'none'
+
+export type WorkspaceDetail = Workspace & { repos: RepoStatus[]; context: ContextFiles }
 
 export type ApiError = { error: string; reasons?: string[] }
 

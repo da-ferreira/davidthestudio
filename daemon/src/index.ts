@@ -24,6 +24,18 @@ app.get('/api/health', async (): Promise<Health> => ({ ok: true, version: '0.0.0
 app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
 app.get<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => ws.getWorkspace(req.params.id))
+app.delete<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => {
+  ws.removeWorkspace(req.params.id)
+  return ws.listWorkspaces()
+})
+app.post<{ Params: { id: string } }>('/api/workspaces/:id/rescan', async (req) => {
+  await ws.rescanWorkspace(req.params.id)
+  return ws.getWorkspace(req.params.id)
+})
+app.post<{ Params: { id: string } }>('/api/workspaces/:id/context/unify', async (req) => {
+  ws.unifyContext(req.params.id)
+  return ws.getWorkspace(req.params.id)
+})
 
 app.post<{ Params: { id: string }; Body: { url: string } }>('/api/workspaces/:id/repos', async (req) => {
   await ws.addRepo(req.params.id, req.body.url)

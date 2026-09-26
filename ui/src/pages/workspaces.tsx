@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { FolderPlus, GitBranch } from 'lucide-react'
+import { FolderPlus, GitBranch, Trash2 } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,11 +14,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Topbar } from '@/components/topbar'
-import { api } from '@/lib/api'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { ApiError, api } from '@/lib/api'
 
 export function Workspaces() {
   const [items, setItems] = useState<Workspace[] | null>(null)
   const [open, setOpen] = useState(false)
+  const [removing, setRemoving] = useState<Workspace | null>(null)
 
   const load = () => api<Workspace[]>('/workspaces').then(setItems).catch(() => setItems([]))
   useEffect(() => {
@@ -54,8 +65,20 @@ export function Workspaces() {
               <Link
                 key={w.id}
                 to={`/w/${w.id}/tickets`}
-                className="flex flex-col gap-3 rounded-xl border p-5 transition-colors hover:border-neutral-300"
+                className="group relative flex flex-col gap-3 rounded-xl border p-5 transition-colors hover:border-neutral-300"
               >
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remover ${w.name}`}
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    setRemoving(w)
+                  }}
+                >
+                  <Trash2 className="text-muted-foreground" />
+                </Button>
                 <div className="flex size-9 items-center justify-center rounded-[9px] bg-primary text-[15px] font-semibold text-primary-foreground">
                   {w.name[0]?.toUpperCase()}
                 </div>
@@ -73,6 +96,7 @@ export function Workspaces() {
         )}
       </div>
       <RegisterDialog open={open} onOpenChange={setOpen} onDone={load} />
+      <RemoveWorkspaceDialog ws={removing} onClose={() => setRemoving(null)} onDone={setItems} />
     </>
   )
 }
@@ -128,5 +152,73 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function RemoveWorkspaceDialog({ ws, onClose, onDone }: { ws: Workspace | null; onClose: () => void; onDone: (items: Workspace[]) => void }) {
+  const [reasons, setReasons] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const remove = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      onDone(await api<Workspace[]>(`/workspaces/${ws!.id}`, { method: 'DELETE' }))
+      onClose()
+    } catch (err) {
+      if (err instanceof ApiError && err.reasons.length) setReasons(err.reasons)
+      else setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const blocked = reasons.length > 0
+
+  return (
+    <AlertDialog
+      open={!!ws}
+      onOpenChange={(v) => {
+        if (v) return
+        onClose()
+        setReasons([])
+        setError(null)
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remover {ws?.name} do studio?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {blocked
+              ? 'Não dá para remover: há tickets com worktrees abertas.'
+              : `A pasta ${ws?.path} e os repositórios ficam no disco. Os tickets deste workspace e o histórico deles saem do studio.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {blocked && (
+          <ul className="list-disc pl-5 text-[13px]">
+            {reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        )}
+        {error && <p className="text-[13px] text-destructive">{error}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel>{blocked ? 'Fechar' : 'Cancelar'}</AlertDialogCancel>
+          {!blocked && (
+            <AlertDialogAction
+              variant="destructive"
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault()
+                remove()
+              }}
+            >
+              {busy ? 'Removendo…' : 'Remover'}
+            </AlertDialogAction>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }

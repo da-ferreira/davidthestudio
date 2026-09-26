@@ -1,11 +1,11 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Manifest, ManifestRepo, RepoStatus, Workspace, WorkspaceDetail } from '@studio/shared'
+import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, Workspace, WorkspaceDetail } from '@studio/shared'
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
-import { ticketsUsingRepo } from './tickets.ts'
+import { deleteTickets, openTickets, ticketsUsingRepo } from './tickets.ts'
 
 type Row = { id: string; name: string; path: string }
 
@@ -60,26 +60,79 @@ export async function registerWorkspace(input: string): Promise<Workspace> {
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new HttpError(400, `Pasta não encontrada: ${dir}`)
   if (db.prepare('SELECT 1 FROM workspaces WHERE path = ?').get(dir)) throw new HttpError(409, 'Essa pasta já está registrada')
 
-  const manifest = readManifest(dir) ?? { name: path.basename(dir), repos: [] }
-  const known = new Set(manifest.repos.map((r) => r.name))
-  const found = fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !known.has(e.name) && fs.existsSync(path.join(dir, e.name, '.git')))
-    .map((e) => e.name)
-    .sort()
-  for (const name of found) manifest.repos.push(await describeRepo(path.join(dir, name), name))
-  writeManifest(dir, manifest)
+  const manifest = await scan(dir, readManifest(dir) ?? { name: path.basename(dir), repos: [] })
 
   const ws = { id: uniqueId(manifest.name), name: manifest.name, path: dir }
   db.prepare('INSERT INTO workspaces (id, name, path) VALUES (?, ?, ?)').run(ws.id, ws.name, ws.path)
   return { ...ws, repoCount: manifest.repos.length }
 }
 
+// Acrescenta repos novos na pasta e atualiza remote/branch dos que existem. Repo que
+// sumiu do disco continua no manifesto (aparece como ausente): pode só não ter sido clonado aqui.
+async function scan(dir: string, manifest: Manifest): Promise<Manifest> {
+  const known = new Set(manifest.repos.map((r) => r.name))
+  const found = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !known.has(e.name) && fs.existsSync(path.join(dir, e.name, '.git')))
+    .map((e) => e.name)
+    .sort()
+  const repos = await Promise.all(
+    manifest.repos.map((r) => (fs.existsSync(path.join(dir, r.name, '.git')) ? describeRepo(path.join(dir, r.name), r.name) : r)),
+  )
+  for (const name of found) repos.push(await describeRepo(path.join(dir, name), name))
+  const next = { ...manifest, repos }
+  writeManifest(dir, next)
+  return next
+}
+
+export async function rescanWorkspace(id: string) {
+  const row = getRow(id)
+  await scan(row.path, manifestOf(row))
+}
+
+// Só tira o workspace do studio: a pasta e os repos ficam no disco.
+export function removeWorkspace(id: string) {
+  getRow(id)
+  const open = openTickets(id)
+  if (open.length) throw new HttpError(409, 'Há tickets abertos neste workspace', open.map((t) => `${t} ainda tem worktrees; encerre ou descarte antes`))
+  deleteTickets(id)
+  db.prepare('DELETE FROM workspaces WHERE id = ?').run(id)
+}
+
+const AGENTS = 'AGENTS.md'
+const CLAUDE = 'CLAUDE.md'
+const IMPORT = '@AGENTS.md\n'
+
+function readIf(file: string) {
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
+}
+
+export const isUnified = (dir: string) => contextFiles(dir) === 'unified'
+
+function contextFiles(dir: string): ContextFiles {
+  const claude = readIf(path.join(dir, CLAUDE))
+  const agents = readIf(path.join(dir, AGENTS))
+  if (claude !== null && claude.trim() === IMPORT.trim()) return 'unified'
+  if (claude !== null && agents !== null) return 'both'
+  return claude !== null ? 'claude' : agents !== null ? 'agents' : 'none'
+}
+
+// O Codex lê AGENTS.md e o Claude lê CLAUDE.md. O conteúdo passa para o AGENTS.md
+// e o CLAUDE.md vira só o import, para os dois agentes lerem o mesmo contexto.
+export function unifyContext(id: string) {
+  const dir = getRow(id).path
+  const state = contextFiles(dir)
+  if (state === 'both') throw new HttpError(409, 'CLAUDE.md e AGENTS.md têm conteúdos diferentes; junte os dois à mão antes')
+  if (state === 'unified' || state === 'none') return
+  if (state === 'claude') fs.renameSync(path.join(dir, CLAUDE), path.join(dir, AGENTS))
+  fs.writeFileSync(path.join(dir, CLAUDE), IMPORT)
+}
+
 export async function getWorkspace(id: string): Promise<WorkspaceDetail> {
   const row = getRow(id)
   const manifest = manifestOf(row)
   const repos = await Promise.all(manifest.repos.map((r) => repoStatus(row.path, r)))
-  return { ...row, repoCount: repos.length, repos }
+  return { ...row, repoCount: repos.length, repos, context: contextFiles(row.path) }
 }
 
 async function repoStatus(root: string, repo: ManifestRepo): Promise<RepoStatus> {

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
+import { Markdown } from '@/components/markdown'
 import { CloseTicketButton } from '@/components/close-ticket'
 import { TicketStatusBadge, isActive, isClosed, modelLabel } from '@/components/ticket-status'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -89,7 +90,7 @@ export function Ticket() {
               </TabsContent>
             </Tabs>
           </div>
-          <ChatPanel ticket={ticket} events={events} />
+          <ChatPanel ticket={ticket} events={events} strip={strip} />
         </div>
       )}
     </div>
@@ -170,7 +171,7 @@ function StopButton({ ticketId }: { ticketId: string }) {
   )
 }
 
-function ChatPanel({ ticket, events }: { ticket: TicketT; events: TicketEvent[] }) {
+function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketEvent[]; strip: (s: string) => string }) {
   const end = useRef<HTMLDivElement>(null)
   const messages = events.filter((e) => ['user', 'text', 'ask'].includes(e.event.type))
   const replies = new Map<string, Reply>()
@@ -188,13 +189,11 @@ function ChatPanel({ ticket, events }: { ticket: TicketT; events: TicketEvent[] 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
         {messages.map(({ seq, event }) =>
           event.type === 'user' ? (
-            <div key={seq} className="max-w-[88%] self-end rounded-[16px_16px_4px_16px] bg-[#f2f2f2] px-3.5 py-2.5 leading-relaxed whitespace-pre-wrap">
-              {event.text}
+            <div key={seq} className="max-w-[88%] self-end rounded-[16px_16px_4px_16px] bg-[#f2f2f2] px-3.5 py-2.5">
+              <Markdown text={event.text} />
             </div>
           ) : event.type === 'text' ? (
-            <div key={seq} className="leading-relaxed whitespace-pre-wrap text-neutral-800">
-              {event.text}
-            </div>
+            <Markdown key={seq} text={strip(event.text)} className="text-neutral-800" />
           ) : event.type === 'ask' ? (
             <AskCard
               key={seq}
