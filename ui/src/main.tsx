@@ -9,6 +9,7 @@ import { Tickets } from '@/pages/tickets'
 import { NovoTicket } from '@/pages/novo-ticket'
 import { Ticket } from '@/pages/ticket'
 import { Conexoes } from '@/pages/conexoes'
+import { Perguntar } from '@/pages/perguntar'
 import { Convite } from '@/pages/entrar'
 import { Usuarios } from '@/pages/usuarios'
 import { Conta } from '@/pages/conta'
@@ -33,6 +34,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="w/:id/tickets" element={<Tickets />} />
           <Route path="w/:id/tickets/novo" element={<NovoTicket />} />
           <Route path="w/:id/tickets/:ticketId" element={<Ticket />} />
+          <Route path="w/:id/perguntar" element={<Perguntar />} />
+          <Route path="w/:id/perguntar/:conversationId" element={<Perguntar />} />
           <Route path="w/:id/repos" element={<Repositorios />} />
         </Route>
       </Routes>

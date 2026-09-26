@@ -14,11 +14,13 @@ type StartOptions = {
   writableDir?: string
   // Pastas fora do cwd que o agente acessa sem pedir permissão.
   extraDirs?: string[]
+  // Só leitura (modo Perguntar): ferramentas que pedem permissão são recusadas sem ir à tela.
+  readOnly?: boolean
   // Ambiente completo do processo (login do usuário); ausente herda o do daemon.
   env?: Record<string, string>
   onEvent: (e: AgentEvent) => void
   // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
-  onAsk: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
+  onAsk?: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
 }
 
 export type Session = {
@@ -60,15 +62,16 @@ export function start(o: StartOptions): Session {
       additionalDirectories: o.extraDirs,
       env: o.env,
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
-      permissionMode: 'acceptEdits',
+      permissionMode: o.readOnly ? 'default' : 'acceptEdits',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },
       hooks: o.writableDir ? { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [onlyInside(o.cwd, o.writableDir)] }] } : undefined,
       canUseTool: async (tool, toolInput, { signal, toolUseID }) => {
+        if (o.readOnly) return { behavior: 'deny', message: 'Nesta conversa o agente só lê: não edita arquivos nem roda comandos que mudem algo. Se precisar perguntar, pergunte na resposta.' }
         const ask: Ask =
           tool === 'AskUserQuestion'
             ? { kind: 'question', questions: questionsOf(toolInput) }
             : { kind: 'permission', tool, title: `O agente quer usar ${tool}`, detail: detailOf(toolInput) }
-        const reply = await o.onAsk(toolUseID, ask, signal)
+        const reply = await o.onAsk!(toolUseID, ask, signal)
         if (!reply.allow) return { behavior: 'deny', message: 'O usuário recusou pela tela do david the studio.' }
         return { behavior: 'allow', updatedInput: reply.answers ? { ...toolInput, answers: reply.answers } : toolInput }
       },

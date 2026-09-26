@@ -87,6 +87,26 @@ db.exec(`
     account TEXT NOT NULL,
     PRIMARY KEY (user_id, kind)
   );
+  CREATE TABLE IF NOT EXISTS conversations (
+    num INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    title TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    model TEXT NOT NULL,
+    status TEXT NOT NULL,
+    session_id TEXT,
+    dir TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE IF NOT EXISTS conversation_events (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+    seq INTEGER NOT NULL,
+    at TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, seq)
+  );
   CREATE TABLE IF NOT EXISTS repo_envs (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     repo TEXT NOT NULL,

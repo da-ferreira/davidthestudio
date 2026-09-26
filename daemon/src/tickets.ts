@@ -209,7 +209,7 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
 
 // Contexto do workspace (CLAUDE.md, memória, skills) entra por symlink, então
 // os caminhos citados nele continuam valendo dentro da pasta da tarefa.
-function linkContext(root: string, taskDir: string, repoNames: string[]) {
+export function linkContext(root: string, taskDir: string, repoNames: string[]) {
   for (const entry of fs.readdirSync(root)) {
     if (repoNames.includes(entry) || entry === 'workspace.json' || SECRET.test(entry)) continue
     fs.symlinkSync(path.join(root, contextTarget(root, entry)), path.join(taskDir, entry))

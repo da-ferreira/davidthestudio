@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, User, Workspace, WorkspaceDetail } from '@studio/shared'
 import { gitEnv } from './connections.ts'
+import { deleteConversations } from './conversations.ts'
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
@@ -97,10 +98,11 @@ export async function rescanWorkspace(id: string) {
 }
 
 // Só tira o workspace do studio: a pasta e os repos ficam no disco.
-export function removeWorkspace(id: string) {
+export async function removeWorkspace(id: string) {
   getRow(id)
   const open = openTickets(id)
   if (open.length) throw new HttpError(409, 'Há tickets abertos neste workspace', open.map((t) => `${t} ainda tem worktrees; encerre ou descarte antes`))
+  await deleteConversations(id)
   deleteTickets(id)
   db.prepare('DELETE FROM repo_envs WHERE workspace_id = ?').run(id)
   db.prepare('DELETE FROM workspaces WHERE id = ?').run(id)

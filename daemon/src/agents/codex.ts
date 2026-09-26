@@ -14,6 +14,8 @@ type StartOptions = {
   resume?: string | null
   // Se definido, só esta pasta é gravável (etapas de spec e plano).
   writableDir?: string
+  // Nada gravável (modo Perguntar).
+  readOnly?: boolean
   // Pastas onde .env, chaves e afins ficam ilegíveis para o agente.
   secretDirs: string[]
   // Ambiente completo do processo (CODEX_HOME do usuário); ausente herda o do daemon.
@@ -24,7 +26,7 @@ type StartOptions = {
 // O Codex não pede permissão: roda sem aprovação dentro de um perfil de sandbox que limita
 // escrita à pasta da tarefa (ou só a writableDir) e esconde os segredos.
 export function start(o: StartOptions): Session {
-  const profile = o.writableDir ? 'studio_doc' : 'studio'
+  const profile = o.readOnly ? 'studio_read' : o.writableDir ? 'studio_doc' : 'studio'
   const rules = [
     'glob_scan_max_depth=4',
     ...(o.writableDir ? [`${JSON.stringify(o.writableDir)}="write"`] : []),
@@ -36,7 +38,7 @@ export function start(o: StartOptions): Session {
     config: {
       developer_instructions: o.instructions,
       default_permissions: profile,
-      permissions: { [profile]: { extends: o.writableDir ? ':read-only' : ':workspace', network: { enabled: true } } },
+      permissions: { [profile]: { extends: o.readOnly || o.writableDir ? ':read-only' : ':workspace', network: { enabled: true } } },
     },
     // Chaves que são caminhos precisam ir como tabela inline; o SDK não põe aspas em chaves pontuadas.
     configOverrides: [`permissions.${profile}.filesystem={${rules.join(', ')}}`],

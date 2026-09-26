@@ -1,10 +1,11 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DocStage, Health, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DocStage, Health, NewConversation, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import * as conn from './connections.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
+import * as conversations from './conversations.ts'
 import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
 
@@ -122,7 +123,7 @@ app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
 app.get<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => ws.getWorkspace(req.params.id))
 app.delete<{ Params: { id: string } }>('/api/workspaces/:id', async (req) => {
-  ws.removeWorkspace(req.params.id)
+  await ws.removeWorkspace(req.params.id)
   return ws.listWorkspaces()
 })
 app.post<{ Params: { id: string } }>('/api/workspaces/:id/rescan', async (req) => {
@@ -211,6 +212,36 @@ app.post<{ Params: { id: string } }>('/api/tickets/:id/tests/stop', async (req) 
 app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:id/asks/:askId', async (req) => {
   tickets.answerAsk(req.params.id, req.params.askId, req.body)
   return tickets.getTicket(req.params.id)
+})
+
+app.get<{ Params: { id: string } }>('/api/workspaces/:id/conversations', async (req) => conversations.listConversations(req.params.id))
+app.post<{ Params: { id: string }; Body: NewConversation }>('/api/workspaces/:id/conversations', async (req) =>
+  conversations.createConversation(req.params.id, req.body ?? {}, req.user),
+)
+app.post<{ Params: { id: string }; Body: { text: string } }>('/api/conversations/:id/messages', async (req) => {
+  conversations.sendMessage(req.params.id, req.body?.text, req.user)
+  return { ok: true }
+})
+app.post<{ Params: { id: string } }>('/api/conversations/:id/stop', async (req) => {
+  await conversations.stopConversation(req.params.id)
+  return { ok: true }
+})
+app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req) => {
+  await conversations.deleteConversation(req.params.id, req.user)
+  return { ok: true }
+})
+app.get<{ Params: { id: string } }>('/ws/conversations/:id', { websocket: true }, (socket, req) => {
+  const send = (m: WsMessage) => socket.send(JSON.stringify(m))
+  let conversation
+  try {
+    conversation = conversations.getConversation(req.params.id)
+  } catch {
+    return socket.close(4404, 'Conversa não encontrada')
+  }
+  send({ kind: 'conversation', conversation })
+  for (const event of conversations.listEvents(conversation.id)) send({ kind: 'event', event })
+  const off = tickets.subscribe(conversation.id, send)
+  socket.on('close', off)
 })
 
 // Manda o histórico gravado e depois os eventos novos. Tudo no mesmo tick,

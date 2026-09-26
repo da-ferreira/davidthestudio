@@ -135,6 +135,23 @@ export type TicketEvent = { seq: number; at: string; event: AgentEvent }
 
 export type TicketDetail = Ticket & { events: TicketEvent[] }
 
+// Modo Perguntar: conversa só de leitura no workspace, sem ticket.
+export type ConversationStatus = 'running' | 'idle' | 'error' | 'interrupted'
+
+export type Conversation = {
+  id: string
+  workspaceId: string
+  title: string
+  agent: AgentKind
+  model: string
+  status: ConversationStatus
+  authorId: string
+  author: string | null
+  createdAt: string
+}
+
+export type NewConversation = { text: string; agent: AgentKind; model: string }
+
 // error: não chegou a rodar até o fim (instalação falhou, tempo esgotado). interrupted: o daemon caiu no meio.
 export type TestStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error' | 'interrupted'
 
@@ -156,6 +173,7 @@ export type TestWarning = { repo: string; reason: 'never' | 'failed' | 'stale' }
 export type WsMessage =
   | { kind: 'event'; event: TicketEvent }
   | { kind: 'ticket'; ticket: Ticket }
+  | { kind: 'conversation'; conversation: Conversation }
   | { kind: 'test'; run: TestRun }
   | { kind: 'test-output'; runId: number; chunk: string }
 

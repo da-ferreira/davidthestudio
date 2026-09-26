@@ -47,7 +47,7 @@ export function Ticket() {
       if (m.kind === 'ticket') setTicket(m.ticket)
       else if (m.kind === 'event') setEvents((es) => [...es, m.event])
       else if (m.kind === 'test') setRuns((rs) => (rs.some((r) => r.id === m.run.id) ? rs.map((r) => (r.id === m.run.id ? m.run : r)) : [...rs, m.run]))
-      else setRuns((rs) => rs.map((r) => (r.id === m.runId ? { ...r, output: r.output + m.chunk } : r)))
+      else if (m.kind === 'test-output') setRuns((rs) => rs.map((r) => (r.id === m.runId ? { ...r, output: r.output + m.chunk } : r)))
     }
     sock.onclose = (e) => e.code === 4404 && setError('Ticket não encontrado')
     return () => sock.close()
