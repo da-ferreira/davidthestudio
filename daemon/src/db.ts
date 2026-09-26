@@ -62,3 +62,5 @@ if (!ticketCols.includes('prs')) db.exec("ALTER TABLE tickets ADD COLUMN prs TEX
 if (!ticketCols.includes('diff')) db.exec('ALTER TABLE tickets ADD COLUMN diff TEXT')
 if (!ticketCols.includes('stage')) db.exec("ALTER TABLE tickets ADD COLUMN stage TEXT NOT NULL DEFAULT 'implement'")
 if (!ticketCols.includes('gates')) db.exec("ALTER TABLE tickets ADD COLUMN gates TEXT NOT NULL DEFAULT '[]'")
+const testCols = (db.prepare('PRAGMA table_info(test_runs)').all() as { name: string }[]).map((c) => c.name)
+if (!testCols.includes('tree')) db.exec('ALTER TABLE test_runs ADD COLUMN tree TEXT')

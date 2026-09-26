@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ManifestRepo, TestRun, TestStatus, Ticket } from '@studio/shared'
+import type { ManifestRepo, TestRun, TestStatus, TestWarning, Ticket } from '@studio/shared'
 import { db } from './db.ts'
+import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
 import { installCommand, markInstalled } from './node-deps.ts'
-import { assertIdle, emit, getTicket, record } from './tickets.ts'
+import { assertIdle, emit, getTicket, record, sendMessage } from './tickets.ts'
 import { workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TIMEOUT_MS = 10 * 60_000
@@ -22,6 +23,7 @@ type Row = {
   output: string
   started_at: string
   finished_at: string | null
+  tree: string | null
 }
 
 const toRun = (r: Row): TestRun => ({
@@ -51,11 +53,13 @@ export function listRuns(ticketId: string): TestRun[] {
 
 export const testsRunning = (ticketId: string) => active.has(ticketId)
 
+export const testableRepos = (t: Ticket) => workspaceRepos(t.workspaceId).filter((r) => t.repos.includes(r.name) && r.test)
+
 export function runTests(ticketId: string) {
   const t = getTicket(ticketId)
   assertIdle(t)
   if (active.has(t.id)) throw new HttpError(409, 'Os testes já estão rodando')
-  const repos = workspaceRepos(t.workspaceId).filter((r) => t.repos.includes(r.name) && r.test)
+  const repos = testableRepos(t)
   if (!repos.length) throw new HttpError(400, 'Nenhum repositório deste ticket tem comando de teste; configure em Repositórios')
   // Reserva o ticket antes do primeiro await, para dois cliques não rodarem em paralelo.
   active.set(t.id, { run: null as unknown as TestRun, stop: () => {}, stopped: false })
@@ -82,10 +86,12 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
   const mainDir = path.join(workspaceRoot(t.workspaceId), repo.name)
   const cwd = path.join(t.taskDir, repo.name)
   const startedAt = new Date().toISOString()
+  // O código que os testes viram; se mudar depois, o resultado fica desatualizado.
+  const tree = await g.worktreeTree(cwd).catch(() => null)
   const id = Number(
     db
-      .prepare("INSERT INTO test_runs (ticket_id, repo, command, status, started_at) VALUES (?, ?, ?, 'running', ?)")
-      .run(t.id, repo.name, repo.test!, startedAt).lastInsertRowid,
+      .prepare("INSERT INTO test_runs (ticket_id, repo, command, status, started_at, tree) VALUES (?, ?, ?, 'running', ?, ?)")
+      .run(t.id, repo.name, repo.test!, startedAt, tree).lastInsertRowid,
   )
   const slot = active.get(t.id)!
   const run: TestRun = { id, ticketId: t.id, repo: repo.name, command: repo.test!, status: 'running', exitCode: null, output: '', startedAt, finishedAt: null }
@@ -129,6 +135,34 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
   emit(t.id, { kind: 'test', run })
   record(t.id, { type: 'note', text: `Testes de ${repo.name}: ${summary(run)}` })
   return status
+}
+
+// Antes do commit: repos com mudanças cujo último teste não passou ou já não vale para o código atual.
+export async function testWarnings(ticketId: string): Promise<TestWarning[]> {
+  const t = getTicket(ticketId)
+  const warnings: TestWarning[] = []
+  for (const repo of testableRepos(t)) {
+    const dir = path.join(t.taskDir, repo.name)
+    if (!(await g.changedFiles(dir))) continue
+    const last = db.prepare('SELECT * FROM test_runs WHERE ticket_id = ? AND repo = ? ORDER BY id DESC LIMIT 1').get(t.id, repo.name) as Row | undefined
+    if (!last) warnings.push({ repo: repo.name, reason: 'never' })
+    else if (last.status !== 'passed') warnings.push({ repo: repo.name, reason: 'failed' })
+    else if (last.tree !== (await g.worktreeTree(dir))) warnings.push({ repo: repo.name, reason: 'stale' })
+  }
+  return warnings
+}
+
+const TAIL_LINES = 150
+const TAIL_CHARS = 12_000
+
+export function sendFailure(ticketId: string, runId: number) {
+  const row = db.prepare('SELECT * FROM test_runs WHERE id = ? AND ticket_id = ?').get(runId, ticketId) as Row | undefined
+  if (!row) throw new HttpError(404, 'Execução não encontrada')
+  if (row.status !== 'failed' && row.status !== 'error') throw new HttpError(409, 'Essa execução não falhou')
+  if (active.has(ticketId)) throw new HttpError(409, 'Espere os testes terminarem')
+  const tail = row.output.trimEnd().split('\n').slice(-TAIL_LINES).join('\n').slice(-TAIL_CHARS)
+  const what = row.status === 'failed' ? `falharam (código ${row.exit_code})` : 'não terminaram'
+  sendMessage(ticketId, `Os testes de ${row.repo} (\`${row.command}\`) ${what}. Corrija para eles passarem. Fim da saída:\n\n\`\`\`\`\n${tail}\n\`\`\`\``)
 }
 
 function summary(run: TestRun) {

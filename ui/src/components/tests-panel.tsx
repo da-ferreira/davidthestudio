@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Play, Square } from 'lucide-react'
+import { ChevronRight, Play, Send, Square } from 'lucide-react'
 import type { TestRun, TestStatus, Ticket, WorkspaceDetail } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -79,13 +79,22 @@ export function TestsPanel({ ticket, runs }: { ticket: Ticket; runs: TestRun[] }
       </div>
       {!runs.length && <p className="px-1 text-[13px] text-muted-foreground">Nenhum teste rodou neste ticket ainda.</p>}
       {newest.map((run, i) => (
-        <RunCard key={run.id} run={run} newest={i === 0} />
+        <RunCard
+          key={run.id}
+          run={run}
+          newest={i === 0}
+          onSend={
+            (run.status === 'failed' || run.status === 'error') && !running && !isActive(ticket) && !isClosed(ticket)
+              ? () => act(`/tickets/${ticket.id}/tests/${run.id}/send`)
+              : undefined
+          }
+        />
       ))}
     </div>
   )
 }
 
-function RunCard({ run, newest }: { run: TestRun; newest: boolean }) {
+function RunCard({ run, newest, onSend }: { run: TestRun; newest: boolean; onSend?: () => void }) {
   const [open, setOpen] = useState(newest)
   const out = useRef<HTMLPreElement>(null)
   const s = STATUS[run.status]
@@ -116,12 +125,25 @@ function RunCard({ run, newest }: { run: TestRun; newest: boolean }) {
         </span>
       </button>
       {open && (
-        <pre
-          ref={out}
-          className="mx-5 mb-4 max-h-[440px] overflow-auto rounded-[10px] border border-[#efefef] bg-[#fafafa] px-3.5 py-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-neutral-800"
-        >
-          {run.output || (run.status === 'running' ? 'Iniciando…' : 'Sem saída.')}
-        </pre>
+        <div className="mx-5 mb-4 flex flex-col gap-3">
+          <pre
+            ref={out}
+            className="max-h-[440px] overflow-auto rounded-[10px] border border-[#efefef] bg-[#fafafa] px-3.5 py-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-neutral-800"
+          >
+            {run.output || (run.status === 'running' ? 'Iniciando…' : 'Sem saída.')}
+          </pre>
+          {onSend && (
+            <div className="flex items-center justify-end gap-3">
+              <span className="text-[12.5px] text-muted-foreground">
+                O agente recebe o fim desta saída e tenta corrigir; os testes rodam de novo quando ele terminar.
+              </span>
+              <Button size="sm" variant="outline" onClick={onSend}>
+                <Send />
+                Mandar para o agente
+              </Button>
+            </div>
+          )}
+        </div>
       )}
     </section>
   )

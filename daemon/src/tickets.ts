@@ -8,7 +8,7 @@ import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
 import { HttpError } from './http-error.ts'
-import { testsRunning } from './tests.ts'
+import { runTests, testableRepos, testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TASKS_DIR = path.join(DATA_DIR, 'tasks')
@@ -228,6 +228,8 @@ export function sendMessage(id: string, input: string) {
   if (!text) throw new HttpError(400, 'Mensagem vazia')
   const t = getTicket(id)
   assertOpen(t)
+  // O agente mexeria no código enquanto os testes rodam sobre ele.
+  if (testsRunning(id)) throw new HttpError(409, 'Espere os testes terminarem ou pare-os')
   const s = sessions.get(id)
   if (s && stopping.has(id)) throw new HttpError(409, 'O agente está parando; mande de novo em instantes')
   record(id, { type: 'user', text })
@@ -373,6 +375,8 @@ function afterTurn(t: Ticket) {
   }
   if (t.stage === 'implement') setStage(t.id, 'review')
   setStatus(t.id, 'done')
+  // Implementação ou ajuste pedido na revisão: o código mudou, então os testes rodam de novo.
+  if (testableRepos(t).length) runTests(t.id)
 }
 
 function advance(t: Ticket, approved: boolean) {

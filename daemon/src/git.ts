@@ -115,6 +115,19 @@ export async function worktreeDiff(dir: string, base: string): Promise<FileChang
   }
 }
 
+// Hash do conteúdo atual da worktree (commitado ou não, fora os ignorados): muda se qualquer arquivo mudar.
+export async function worktreeTree(dir: string): Promise<string> {
+  const index = path.join(os.tmpdir(), `studio-index-${randomUUID()}`)
+  const e = { GIT_INDEX_FILE: index }
+  try {
+    await git(dir, ['read-tree', 'HEAD'], e)
+    await git(dir, ['add', '-A'], e)
+    return await git(dir, ['write-tree'], e)
+  } finally {
+    fs.rmSync(index, { force: true })
+  }
+}
+
 export async function commitsSince(dir: string, base: string) {
   const out = await git(dir, ['log', '--format=%h%x09%s', `${base}..HEAD`])
   return out

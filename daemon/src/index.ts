@@ -103,6 +103,11 @@ app.post<{ Params: { id: string } }>('/api/tickets/:id/tests', async (req) => {
   tests.runTests(req.params.id)
   return { ok: true }
 })
+app.get<{ Params: { id: string } }>('/api/tickets/:id/tests/warnings', (req) => tests.testWarnings(req.params.id))
+app.post<{ Params: { id: string; run: string } }>('/api/tickets/:id/tests/:run/send', async (req) => {
+  tests.sendFailure(req.params.id, Number(req.params.run))
+  return { ok: true }
+})
 app.post<{ Params: { id: string } }>('/api/tickets/:id/tests/stop', async (req) => {
   tests.stopTests(req.params.id)
   return { ok: true }

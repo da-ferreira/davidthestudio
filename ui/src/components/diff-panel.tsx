@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, ExternalLink, GitCommitHorizontal } from 'lucide-react'
-import type { FileChange, RepoDiff, Ticket } from '@studio/shared'
+import { ChevronRight, ExternalLink, GitCommitHorizontal, TriangleAlert } from 'lucide-react'
+import type { FileChange, RepoDiff, TestWarning, Ticket } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,11 +8,18 @@ import { isActive, isClosed } from '@/components/ticket-status'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+const WARNING: Record<TestWarning['reason'], string> = {
+  never: 'os testes não rodaram',
+  failed: 'o último teste não passou',
+  stale: 'o código mudou depois do último teste',
+}
+
 export function DiffPanel({ ticket }: { ticket: Ticket }) {
   const [diffs, setDiffs] = useState<RepoDiff[] | null>(null)
   const [message, setMessage] = useState(ticket.title)
   const [busy, setBusy] = useState<'commit' | 'pr' | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
+  const [warnings, setWarnings] = useState<TestWarning[] | null>(null)
 
   const load = () =>
     api<RepoDiff[]>(`/tickets/${ticket.id}/diff`)
@@ -26,6 +33,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
   const act = (kind: 'commit' | 'pr') => {
     setBusy(kind)
     setError(null)
+    setWarnings(null)
     api<RepoDiff[]>(`/tickets/${ticket.id}/${kind}`, { method: 'POST', body: kind === 'commit' ? { message } : {} })
       .then(setDiffs)
       // Parte pode ter dado certo (ex.: push ok, PR falhou); recarrega para mostrar o estado real.
@@ -34,6 +42,22 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
         load()
       })
       .finally(() => setBusy(null))
+  }
+
+  // Avisa, sem bloquear: o humano pode commitar mesmo com teste falhando ou desatualizado.
+  const commit = () => {
+    setBusy('commit')
+    setError(null)
+    api<TestWarning[]>(`/tickets/${ticket.id}/tests/warnings`)
+      .then((w) => {
+        if (!w.length) return act('commit')
+        setWarnings(w)
+        setBusy(null)
+      })
+      .catch((e) => {
+        setError(e)
+        setBusy(null)
+      })
   }
 
   const active = isActive(ticket)
@@ -49,7 +73,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
         <div className="flex flex-col gap-2 rounded-[14px] border border-[#efefef] px-4 py-3.5">
           <div className="flex items-center gap-2">
             <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Mensagem do commit" className="flex-1" />
-            <Button disabled={active || !uncommitted || !message.trim() || !!busy} onClick={() => act('commit')}>
+            <Button disabled={active || !uncommitted || !message.trim() || !!busy} onClick={commit}>
               <GitCommitHorizontal />
               {busy === 'commit' ? 'Commitando…' : 'Commitar'}
             </Button>
@@ -64,6 +88,24 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
                 ? `${uncommitted} arquivo(s) sem commit. O commit sai com a sua identidade git e o Claude como coautor.`
                 : 'Tudo commitado.'}
           </span>
+          {warnings && (
+            <div className="flex items-start gap-3 rounded-[10px] bg-amber-50 px-3.5 py-3 text-[13px] text-amber-900">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+              <div className="flex flex-1 flex-col gap-0.5">
+                {warnings.map((w) => (
+                  <span key={w.repo}>
+                    <span className="font-medium">{w.repo}</span>: {WARNING[w.reason]}
+                  </span>
+                ))}
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setWarnings(null)}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={() => act('commit')}>
+                Commitar mesmo assim
+              </Button>
+            </div>
+          )}
           {error && (
             <div className="text-[13px] text-destructive">
               {error.message}

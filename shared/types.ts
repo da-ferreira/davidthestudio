@@ -119,6 +119,9 @@ export type TestRun = {
   finishedAt: string | null
 }
 
+// Por que avisar antes do commit: nunca rodou, o último não passou, ou o código mudou depois dele.
+export type TestWarning = { repo: string; reason: 'never' | 'failed' | 'stale' }
+
 export type WsMessage =
   | { kind: 'event'; event: TicketEvent }
   | { kind: 'ticket'; ticket: Ticket }
