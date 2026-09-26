@@ -14,6 +14,8 @@ type StartOptions = {
   writableDir?: string
   // Pastas fora do cwd que o agente acessa sem pedir permissão.
   extraDirs?: string[]
+  // Ambiente completo do processo (login do usuário); ausente herda o do daemon.
+  env?: Record<string, string>
   onEvent: (e: AgentEvent) => void
   // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
   onAsk: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
@@ -56,6 +58,7 @@ export function start(o: StartOptions): Session {
       model: o.model,
       resume: o.resume ?? undefined,
       additionalDirectories: o.extraDirs,
+      env: o.env,
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
       permissionMode: 'acceptEdits',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },

@@ -1,8 +1,8 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { ApiError, DocStage, Health, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DocStage, Health, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
-import * as codex from './codex-login.ts'
+import * as conn from './connections.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
 import * as tickets from './tickets.ts'
@@ -37,6 +37,11 @@ app.addHook('onRequest', async (req) => {
   req.user = user
   if (url.startsWith('/api/admin/') && !user.admin) throw new HttpError(403, 'Só o administrador pode fazer isso')
 })
+
+function agent(a: string): AgentKind {
+  if (a !== 'claude' && a !== 'codex') throw new HttpError(404, 'Agente desconhecido')
+  return a
+}
 
 const setCookie = (reply: FastifyReply, req: FastifyRequest, token: string | null) =>
   reply.header('set-cookie', auth.sessionCookie(token, req.protocol === 'https'))
@@ -84,19 +89,34 @@ app.delete<{ Params: { id: string } }>('/api/admin/invites/:id', async (req) => 
   return auth.listInvites()
 })
 
-app.get('/api/codex', async () => codex.codexStatus())
-app.post('/api/codex/login', async () => ({ url: await codex.startChatGptLogin() }))
-app.post('/api/codex/login/cancel', async () => {
-  codex.cancelLogin()
+app.get('/api/me/connections', async (req) => conn.connections(req.user))
+app.post<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/login', async (req) => {
+  await conn.startLogin(req.user, agent(req.params.agent))
+  return conn.agentStatus(req.user, req.params.agent)
+})
+app.post<{ Body: { code: string } }>('/api/me/agents/claude/code', async (req) => {
+  await conn.submitClaudeCode(req.user, req.body.code)
+  return conn.agentStatus(req.user, 'claude')
+})
+app.post<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/login/cancel', async (req) => {
+  conn.cancelLogin(req.user, agent(req.params.agent))
   return { ok: true }
 })
-app.post<{ Body: { key: string } }>('/api/codex/api-key', async (req) => {
-  await codex.loginWithApiKey(req.body.key)
-  return { ok: true }
+app.post<{ Params: { agent: AgentKind }; Body: { key: string } }>('/api/me/agents/:agent/api-key', async (req) => {
+  await conn.saveApiKey(req.user, agent(req.params.agent), req.body.key)
+  return conn.agentStatus(req.user, req.params.agent)
 })
-app.post('/api/codex/logout', async () => {
-  await codex.logout()
-  return { ok: true }
+app.post<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/logout', async (req) => {
+  await conn.logout(req.user, agent(req.params.agent))
+  return conn.agentStatus(req.user, req.params.agent)
+})
+app.put<{ Body: { token: string } }>('/api/me/github', async (req) => {
+  await conn.saveGithubToken(req.user, req.body.token)
+  return conn.githubStatus(req.user)
+})
+app.delete('/api/me/github', async (req) => {
+  conn.removeGithubToken(req.user)
+  return conn.githubStatus(req.user)
 })
 app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
@@ -115,7 +135,7 @@ app.post<{ Params: { id: string } }>('/api/workspaces/:id/context/unify', async 
 })
 
 app.post<{ Params: { id: string }; Body: { url: string } }>('/api/workspaces/:id/repos', async (req) => {
-  await ws.addRepo(req.params.id, req.body.url)
+  await ws.addRepo(req.params.id, req.body.url, req.user)
   return ws.getWorkspace(req.params.id)
 })
 app.get<{ Params: { id: string; name: string } }>('/api/workspaces/:id/repos/:name/removal', async (req) => ({
@@ -168,7 +188,7 @@ app.post<{ Params: { id: string }; Body: { message: string } }>('/api/tickets/:i
   return tickets.getDiff(req.params.id)
 })
 app.post<{ Params: { id: string } }>('/api/tickets/:id/pr', async (req) => {
-  await tickets.openPrs(req.params.id)
+  await tickets.openPrs(req.params.id, req.user)
   return tickets.getDiff(req.params.id)
 })
 app.post<{ Params: { id: string }; Body: { discard?: boolean } }>('/api/tickets/:id/close', async (req) => {

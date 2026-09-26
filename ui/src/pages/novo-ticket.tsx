@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { Check, GitBranch, TriangleAlert } from 'lucide-react'
-import type { AgentKind, CodexStatus, DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
+import type { AgentKind, Connections, DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -24,7 +24,7 @@ export function NovoTicket() {
   const [agent, setAgent] = useState<AgentKind>('claude')
   const [model, setModel] = useState('opus')
   const [codexModel, setCodexModel] = useState('')
-  const [codex, setCodex] = useState<CodexStatus | null>(null)
+  const [conn, setConn] = useState<Connections | null>(null)
   const [sdd, setSdd] = useState(true)
   const [gates, setGates] = useState<DocStage[]>(['spec', 'plan'])
   const [error, setError] = useState<string | null>(null)
@@ -39,8 +39,8 @@ export function NovoTicket() {
   }, [id])
 
   useEffect(() => {
-    if (agent === 'codex') api<CodexStatus>('/codex').then(setCodex)
-  }, [agent])
+    api<Connections>('/me/connections').then(setConn)
+  }, [])
 
   const toggle = (name: string) => setRepos((rs) => (rs.includes(name) ? rs.filter((r) => r !== name) : [...rs, name]))
 
@@ -114,10 +114,10 @@ export function NovoTicket() {
                 <SelectItem value="codex">Codex</SelectItem>
               </SelectContent>
             </Select>
-            {agent === 'codex' && codex && !codex.connected && (
+            {conn && !conn[agent].connected && (
               <span className="text-[13px] text-destructive">
-                O Codex não está conectado.{' '}
-                <Link to="/agentes" className="underline">
+                O {agent === 'codex' ? 'Codex' : 'Claude Code'} não está conectado.{' '}
+                <Link to="/conexoes" className="underline">
                   Conectar
                 </Link>
               </span>
@@ -187,7 +187,7 @@ export function NovoTicket() {
             <Button variant="outline" size="lg" className="flex-1" onClick={() => navigate(`/w/${id}/tickets`)}>
               Cancelar
             </Button>
-            <Button size="lg" className="flex-[2]" disabled={!title.trim() || !repos.length || busy || (agent === 'codex' && !codex?.connected)} onClick={submit}>
+            <Button size="lg" className="flex-[2]" disabled={!title.trim() || !repos.length || busy || (!!conn && !conn[agent].connected)} onClick={submit}>
               {busy ? 'Criando worktrees…' : 'Criar e iniciar'}
             </Button>
           </div>

@@ -59,8 +59,8 @@ export async function stashCount(cwd: string): Promise<number> {
   return out ? out.split('\n').length : 0
 }
 
-export async function clone(url: string, parent: string, name: string) {
-  await exec('git', ['clone', url, name], { cwd: parent, env, maxBuffer: 64 * 1024 * 1024 })
+export async function clone(url: string, parent: string, name: string, extraEnv: Record<string, string> = {}) {
+  await exec('git', ['clone', url, name], { cwd: parent, env: { ...env, ...extraEnv }, maxBuffer: 64 * 1024 * 1024 })
 }
 
 export async function addWorktree(repo: string, dir: string, branch: string, base: string) {

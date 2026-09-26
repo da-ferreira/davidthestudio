@@ -80,6 +80,13 @@ db.exec(`
     used_by TEXT REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
+  CREATE TABLE IF NOT EXISTS credentials (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    kind TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    account TEXT NOT NULL,
+    PRIMARY KEY (user_id, kind)
+  );
 `)
 
 // Colunas acrescentadas depois da criação da tabela.

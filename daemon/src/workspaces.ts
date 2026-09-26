@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, Workspace, WorkspaceDetail } from '@studio/shared'
+import type { ContextFiles, Manifest, ManifestRepo, RepoStatus, User, Workspace, WorkspaceDetail } from '@studio/shared'
+import { gitEnv } from './connections.ts'
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
@@ -146,7 +147,7 @@ async function repoStatus(root: string, repo: ManifestRepo): Promise<RepoStatus>
   return { ...repo, present: true, branch, changes, unpushed, hasEnv: fs.existsSync(path.join(dir, ENV)) }
 }
 
-export async function addRepo(id: string, url: string): Promise<void> {
+export async function addRepo(id: string, url: string, user: User): Promise<void> {
   const row = getRow(id)
   const name = url.trim().replace(/\/+$/, '').split(/[/:]/).pop()?.replace(/\.git$/, '')
   if (!name || !/^[\w.-]+$/.test(name) || name === '..') throw new HttpError(400, 'URL inválida')
@@ -154,8 +155,9 @@ export async function addRepo(id: string, url: string): Promise<void> {
   if (manifest.repos.some((r) => r.name === name) || fs.existsSync(path.join(row.path, name))) {
     throw new HttpError(409, `Já existe "${name}" neste workspace`)
   }
+  const env = gitEnv(user)
   try {
-    await g.clone(url.trim(), row.path, name)
+    await g.clone(url.trim(), row.path, name, env)
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr?.trim()
     throw new HttpError(400, stderr || 'Falha no git clone')

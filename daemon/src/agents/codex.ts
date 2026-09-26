@@ -16,6 +16,8 @@ type StartOptions = {
   writableDir?: string
   // Pastas onde .env, chaves e afins ficam ilegíveis para o agente.
   secretDirs: string[]
+  // Ambiente completo do processo (CODEX_HOME do usuário); ausente herda o do daemon.
+  env?: Record<string, string>
   onEvent: (e: AgentEvent) => void
 }
 
@@ -30,6 +32,7 @@ export function start(o: StartOptions): Session {
   ]
   // Sem sandboxMode na thread: passar um modo explícito descarta o perfil de permissões.
   const codex = new Codex({
+    env: o.env,
     config: {
       developer_instructions: o.instructions,
       default_permissions: profile,

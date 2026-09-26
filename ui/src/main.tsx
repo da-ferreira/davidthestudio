@@ -8,7 +8,7 @@ import { Repositorios } from '@/pages/repositorios'
 import { Tickets } from '@/pages/tickets'
 import { NovoTicket } from '@/pages/novo-ticket'
 import { Ticket } from '@/pages/ticket'
-import { Agentes } from '@/pages/agentes'
+import { Conexoes } from '@/pages/conexoes'
 import { Convite } from '@/pages/entrar'
 import { Usuarios } from '@/pages/usuarios'
 import { Conta } from '@/pages/conta'
@@ -27,7 +27,7 @@ createRoot(document.getElementById('root')!).render(
           }
         >
           <Route index element={<Workspaces />} />
-          <Route path="agentes" element={<Agentes />} />
+          <Route path="conexoes" element={<Conexoes />} />
           <Route path="usuarios" element={<Usuarios />} />
           <Route path="conta" element={<Conta />} />
           <Route path="w/:id/tickets" element={<Tickets />} />

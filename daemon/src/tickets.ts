@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
-import { codexStatus } from './codex-login.ts'
+import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
@@ -155,7 +155,7 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
   if (agent === 'claude' && !MODELS.includes(model)) throw new HttpError(400, 'Modelo inválido')
-  if (agent === 'codex' && !(await codexStatus()).connected) throw new HttpError(400, 'Conecte o Codex na tela Agentes antes de criar o ticket')
+  if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de criar o ticket`)
   const repos = [...new Set(input.repos ?? [])]
   if (!repos.length) throw new HttpError(400, 'Escolha ao menos um repositório')
   const gates = DOC_STAGES.filter((st) => input.gates?.includes(st))
@@ -307,6 +307,12 @@ function linkedNodeModules(t: Ticket) {
   ]
 }
 
+// O agente roda sempre com o login de quem criou o ticket; o resume depende disso.
+function owner(t: Ticket) {
+  const row = db.prepare('SELECT u.id, u.admin FROM tickets t JOIN users u ON u.id = t.created_by WHERE t.id = ?').get(t.id) as { id: string; admin: number }
+  return { id: row.id, admin: !!row.admin }
+}
+
 function run(t: Ticket, prompt: string, resume?: string | null) {
   const instructions = [
     `Você está trabalhando no ticket ${t.id} do david the studio.`,
@@ -334,8 +340,9 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
       if (e.type === 'result') ok = e.ok
     },
   }
-  const session = t.agent === 'codex' ? codex.start({ ...common, secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
+  const session = t.agent === 'codex' ? codex.start({ ...common, env: codexEnv(owner(t)), secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
     ...common,
+    env: claudeEnv(owner(t)),
     // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
     extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
     onAsk: (askId, ask, signal) =>
@@ -518,9 +525,10 @@ export async function commitTicket(id: string, input: string, user: User) {
 }
 
 // Um PR por repo com commits. Se o PR já existe, só sobe os commits novos.
-export async function openPrs(id: string) {
+export async function openPrs(id: string, user: User) {
   const t = getTicket(id)
   assertIdle(t)
+  const env = gitEnv(user)
   const prs = { ...t.prs }
   let acted = 0
   for (const repo of t.repos) {
@@ -532,7 +540,7 @@ export async function openPrs(id: string) {
     if (!(await g.remoteUrl(dir))) throw new HttpError(400, `${repo} não tem remote origin`)
     if (unpushed) {
       try {
-        await g.git(dir, ['push', '-q', '-u', 'origin', t.branch])
+        await g.git(dir, ['push', '-q', '-u', 'origin', t.branch], env)
       } catch (err) {
         throw new HttpError(400, `Falha no push de ${repo}`, [(err as { stderr?: string }).stderr?.trim() || String(err)])
       }
@@ -554,7 +562,7 @@ export async function openPrs(id: string) {
     try {
       const { stdout } = await exec('gh', ['pr', 'create', '--base', baseBranch, '--head', t.branch, '--title', t.title, '--body', body], {
         cwd: dir,
-        env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+        env: { ...process.env, ...env, GH_PROMPT_DISABLED: '1' },
       })
       prs[repo] = stdout.trim().split('\n').pop()!
     } catch (err) {

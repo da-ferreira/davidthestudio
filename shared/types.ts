@@ -9,7 +9,20 @@ export type NewUser = { username: string; name: string; email: string; password:
 
 export type Invite = { id: string; createdAt: string; expiresAt: string }
 
-export type CodexStatus = { connected: boolean; method: 'chatgpt' | 'apikey' | null; loggingIn: boolean }
+// login: entrada pela assinatura em andamento. O Claude devolve um código para colar aqui;
+// o Codex mostra um código para digitar no site dele.
+export type AgentStatus = {
+  connected: boolean
+  method: 'subscription' | 'apikey' | null
+  // Conta ou final da chave, para a pessoa saber com o que está conectada.
+  account: string | null
+  login: { url: string; code: string | null } | null
+}
+
+export type Connections = { claude: AgentStatus; codex: AgentStatus; github: GithubStatus }
+
+// machine: sem token próprio, o admin usa o git e o gh já autenticados na máquina.
+export type GithubStatus = { connected: boolean; account: string | null; machine: boolean }
 
 // Formato do workspace.json na raiz do workspace.
 export type Manifest = {
