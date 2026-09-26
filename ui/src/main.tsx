@@ -9,14 +9,27 @@ import { Tickets } from '@/pages/tickets'
 import { NovoTicket } from '@/pages/novo-ticket'
 import { Ticket } from '@/pages/ticket'
 import { Agentes } from '@/pages/agentes'
+import { Convite } from '@/pages/entrar'
+import { Usuarios } from '@/pages/usuarios'
+import { Conta } from '@/pages/conta'
+import { AuthGate } from '@/components/auth-gate'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route element={<Layout />}>
+        <Route path="convite/:token" element={<Convite />} />
+        <Route
+          element={
+            <AuthGate>
+              <Layout />
+            </AuthGate>
+          }
+        >
           <Route index element={<Workspaces />} />
           <Route path="agentes" element={<Agentes />} />
+          <Route path="usuarios" element={<Usuarios />} />
+          <Route path="conta" element={<Conta />} />
           <Route path="w/:id/tickets" element={<Tickets />} />
           <Route path="w/:id/tickets/novo" element={<NovoTicket />} />
           <Route path="w/:id/tickets/:ticketId" element={<Ticket />} />

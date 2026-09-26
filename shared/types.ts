@@ -1,5 +1,14 @@
 export type Health = { ok: true; version: string }
 
+export type User = { id: string; username: string; name: string; email: string; admin: boolean }
+
+// suggested: nome e e-mail do git da máquina, para preencher o primeiro cadastro.
+export type AuthState = { user: User | null; needsSetup: boolean; suggested?: { name: string; email: string } }
+
+export type NewUser = { username: string; name: string; email: string; password: string }
+
+export type Invite = { id: string; createdAt: string; expiresAt: string }
+
 export type CodexStatus = { connected: boolean; method: 'chatgpt' | 'apikey' | null; loggingIn: boolean }
 
 // Formato do workspace.json na raiz do workspace.
@@ -69,6 +78,8 @@ export type Ticket = {
   gates: DocStage[]
   // repo -> URL do PR aberto pelo studio
   prs: Record<string, string>
+  // Nome de quem criou.
+  author: string | null
   createdAt: string
 }
 

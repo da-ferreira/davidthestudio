@@ -30,7 +30,7 @@ Pacotes com pnpm workspaces. `pnpm dev` na raiz sobe daemon e UI juntos.
 
 ## Git
 
-- Commit com a identidade git da máquina (o humano que aprovou) e `Co-Authored-By` do agente.
+- Commit com nome e e-mail do usuário do studio que aprovou e `Co-Authored-By` do agente.
 - Um PR por repo afetado (`gh pr create`).
 - Remover repo do workspace exige checar mudanças não commitadas, branches sem push e tickets ativos.
 - Nunca commitar segredos: `.env`, `.pem` e afins ficam fora do git e do contexto.

@@ -15,6 +15,8 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
     body: init?.body ? JSON.stringify(init.body) : undefined,
   })
   const data = await res.json().catch(() => null)
+  // Sessão vencida ou removida: a tela volta para o login.
+  if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('studio:signed-out'))
   if (!res.ok) {
     const err = data as ApiErrorBody | null
     throw new ApiError(err?.error ?? `Erro ${res.status}`, err?.reasons)

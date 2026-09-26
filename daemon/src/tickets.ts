@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, WsMessage } from '@studio/shared'
+import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { codexStatus } from './codex-login.ts'
@@ -41,6 +41,7 @@ type Row = {
   gates: string
   prs: string
   diff: string | null
+  author: string | null
   created_at: string
 }
 
@@ -59,8 +60,11 @@ const toTicket = (r: Row): Ticket => ({
   stage: r.stage,
   gates: JSON.parse(r.gates),
   prs: JSON.parse(r.prs),
+  author: r.author,
   createdAt: r.created_at,
 })
+
+const SELECT = 'SELECT t.*, u.name AS author FROM tickets t LEFT JOIN users u ON u.id = t.created_by'
 
 const listeners = new Map<string, Set<(m: WsMessage) => void>>()
 
@@ -84,13 +88,13 @@ const pending = new Map<string, string[]>()
 const stopping = new Set<string>()
 
 function getRow(id: string): Row {
-  const row = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as Row | undefined
+  const row = db.prepare(`${SELECT} WHERE t.id = ?`).get(id) as Row | undefined
   if (!row) throw new HttpError(404, 'Ticket não encontrado')
   return row
 }
 
 export function listTickets(workspaceId: string): Ticket[] {
-  const rows = db.prepare('SELECT * FROM tickets WHERE workspace_id = ? ORDER BY num DESC').all(workspaceId) as Row[]
+  const rows = db.prepare(`${SELECT} WHERE t.workspace_id = ? ORDER BY t.num DESC`).all(workspaceId) as Row[]
   return rows.map(toTicket)
 }
 
@@ -142,7 +146,7 @@ function slugify(s: string) {
     .replace(/-$/, '')
 }
 
-export async function createTicket(workspaceId: string, input: NewTicket): Promise<Ticket> {
+export async function createTicket(workspaceId: string, input: NewTicket, user: User): Promise<Ticket> {
   const root = workspaceRoot(workspaceId)
   const manifestRepos = workspaceRepos(workspaceId)
   const title = input.title?.trim()
@@ -192,9 +196,9 @@ export async function createTicket(workspaceId: string, input: NewTicket): Promi
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates))
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id)
 
   const t = getTicket(id)
   const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
@@ -480,8 +484,8 @@ export async function getDiff(id: string): Promise<RepoDiff[]> {
   )
 }
 
-// Commit com a identidade git da máquina (quem aprovou) e o agente como coautor.
-export async function commitTicket(id: string, input: string) {
+// Commit no nome de quem aprovou (usuário do studio) e o agente como coautor.
+export async function commitTicket(id: string, input: string, user: User) {
   const t = getTicket(id)
   assertIdle(t)
   const subject = input?.trim()
@@ -502,7 +506,12 @@ export async function commitTicket(id: string, input: string) {
   }
   if (!toCommit.length) throw new HttpError(400, 'Não há mudanças para commitar')
   for (const d of toCommit) {
-    await g.git(d.dir, ['commit', '-q', '-m', message])
+    await g.git(d.dir, ['commit', '-q', '-m', message], {
+      GIT_AUTHOR_NAME: user.name,
+      GIT_AUTHOR_EMAIL: user.email,
+      GIT_COMMITTER_NAME: user.name,
+      GIT_COMMITTER_EMAIL: user.email,
+    })
     const sha = await g.git(d.dir, ['rev-parse', '--short', 'HEAD'])
     record(id, { type: 'note', text: `commit ${sha} em ${d.repo}: ${subject}` })
   }

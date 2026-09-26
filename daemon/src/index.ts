@@ -1,6 +1,7 @@
-import Fastify from 'fastify'
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { ApiError, DocStage, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
+import type { ApiError, DocStage, Health, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
+import * as auth from './auth.ts'
 import * as codex from './codex-login.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
@@ -21,7 +22,67 @@ app.setErrorHandler((err, _req, reply) => {
   return reply.status(500).send({ error: err instanceof Error ? err.message : 'Erro interno' } satisfies ApiError)
 })
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    user: User
+  }
+}
+
+// Tudo exige sessão, menos o próprio login, o cadastro inicial e o aceite de convite.
+app.addHook('onRequest', async (req) => {
+  const url = req.url
+  if (url === '/api/health' || url.startsWith('/api/auth/') || !(url.startsWith('/api/') || url.startsWith('/ws/'))) return
+  const user = auth.sessionUser(req.headers.cookie)
+  if (!user) throw new HttpError(401, 'Entre para continuar')
+  req.user = user
+  if (url.startsWith('/api/admin/') && !user.admin) throw new HttpError(403, 'Só o administrador pode fazer isso')
+})
+
+const setCookie = (reply: FastifyReply, req: FastifyRequest, token: string | null) =>
+  reply.header('set-cookie', auth.sessionCookie(token, req.protocol === 'https'))
+
 app.get('/api/health', async (): Promise<Health> => ({ ok: true, version: '0.0.0' }))
+
+app.get('/api/auth/state', async (req) => auth.authState(req.headers.cookie))
+app.post<{ Body: NewUser }>('/api/auth/setup', async (req, reply) => {
+  setCookie(reply, req, auth.setup(req.body))
+  return { ok: true }
+})
+app.post<{ Body: { username: string; password: string } }>('/api/auth/login', async (req, reply) => {
+  setCookie(reply, req, auth.login(req.body.username, req.body.password))
+  return { ok: true }
+})
+app.post('/api/auth/logout', async (req, reply) => {
+  auth.endSession(req.headers.cookie)
+  setCookie(reply, req, null)
+  return { ok: true }
+})
+app.get<{ Params: { token: string } }>('/api/auth/invites/:token', async (req) => auth.checkInvite(req.params.token))
+app.post<{ Params: { token: string }; Body: NewUser }>('/api/auth/invites/:token', async (req, reply) => {
+  setCookie(reply, req, auth.acceptInvite(req.params.token, req.body))
+  return { ok: true }
+})
+
+app.put<{ Body: { name: string; email: string } }>('/api/me', async (req) => {
+  auth.updateProfile(req.user, req.body)
+  return { ok: true }
+})
+app.put<{ Body: { current: string; password: string } }>('/api/me/password', async (req) => {
+  auth.changePassword(req.user, req.headers.cookie, req.body.current, req.body.password)
+  return { ok: true }
+})
+
+app.get('/api/admin/users', async () => auth.listUsers())
+app.delete<{ Params: { id: string } }>('/api/admin/users/:id', async (req) => {
+  auth.removeUser(req.user, req.params.id)
+  return auth.listUsers()
+})
+app.get('/api/admin/invites', async () => auth.listInvites())
+app.post('/api/admin/invites', async (req) => auth.createInvite(req.user))
+app.delete<{ Params: { id: string } }>('/api/admin/invites/:id', async (req) => {
+  auth.revokeInvite(req.params.id)
+  return auth.listInvites()
+})
 
 app.get('/api/codex', async () => codex.codexStatus())
 app.post('/api/codex/login', async () => ({ url: await codex.startChatGptLogin() }))
@@ -81,7 +142,7 @@ app.get<{ Params: { id: string } }>('/api/workspaces/:id/tickets', async (req) =
   return tickets.listTickets(req.params.id)
 })
 app.post<{ Params: { id: string }; Body: NewTicket }>('/api/workspaces/:id/tickets', async (req) =>
-  tickets.createTicket(req.params.id, req.body),
+  tickets.createTicket(req.params.id, req.body, req.user),
 )
 app.get<{ Params: { id: string } }>('/api/tickets/:id', async (req) => tickets.getTicketDetail(req.params.id))
 app.post<{ Params: { id: string }; Body: { text: string } }>('/api/tickets/:id/messages', async (req) => {
@@ -103,7 +164,7 @@ app.post<{ Params: { id: string }; Body: { stage: DocStage } }>('/api/tickets/:i
 })
 app.get<{ Params: { id: string } }>('/api/tickets/:id/diff', async (req) => tickets.getDiff(req.params.id))
 app.post<{ Params: { id: string }; Body: { message: string } }>('/api/tickets/:id/commit', async (req) => {
-  await tickets.commitTicket(req.params.id, req.body.message)
+  await tickets.commitTicket(req.params.id, req.body.message, req.user)
   return tickets.getDiff(req.params.id)
 })
 app.post<{ Params: { id: string } }>('/api/tickets/:id/pr', async (req) => {
@@ -149,5 +210,5 @@ app.get<{ Params: { id: string } }>('/ws/tickets/:id', { websocket: true }, (soc
   socket.on('close', off)
 })
 
-// Só localhost: o daemon roda comandos na máquina e ainda não tem login.
+// Só localhost: o daemon roda comandos na máquina; expor fica para a instalação em servidor.
 await app.listen({ port: PORT, host: '127.0.0.1' })

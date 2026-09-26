@@ -85,7 +85,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
             {active
               ? 'O agente está trabalhando; espere ele terminar ou pare para commitar.'
               : uncommitted
-                ? `${uncommitted} arquivo(s) sem commit. O commit sai com a sua identidade git e o ${ticket.agent === 'codex' ? 'Codex' : 'Claude'} como coautor.`
+                ? `${uncommitted} arquivo(s) sem commit. O commit sai com o seu nome e e-mail do studio e o ${ticket.agent === 'codex' ? 'Codex' : 'Claude'} como coautor.`
                 : 'Tudo commitado.'}
           </span>
           {warnings && (

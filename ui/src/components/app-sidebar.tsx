@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router'
-import { ArrowLeft, Bot, FolderGit2, LayoutGrid, Ticket } from 'lucide-react'
+import { ArrowLeft, Bot, FolderGit2, LayoutGrid, LogOut, Ticket, Users } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import {
   Sidebar,
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 
 export function AppSidebar() {
   const wsId = useMatch('/w/:id/*')?.params.id
@@ -27,7 +28,8 @@ export function AppSidebar() {
       <SidebarContent>
         {wsId ? <WorkspaceNav id={wsId} /> : <GlobalNav />}
       </SidebarContent>
-      <SidebarFooter className="px-4 pb-4">
+      <SidebarFooter className="gap-3 px-4 pb-4">
+        <Account />
         <DaemonStatus />
       </SidebarFooter>
     </Sidebar>
@@ -35,6 +37,7 @@ export function AppSidebar() {
 }
 
 function GlobalNav() {
+  const { user } = useAuth()
   return (
     <SidebarGroup>
       <SidebarGroupContent>
@@ -59,6 +62,18 @@ function GlobalNav() {
               )}
             </NavLink>
           </SidebarMenuItem>
+          {user.admin && (
+            <SidebarMenuItem>
+              <NavLink to="/usuarios">
+                {({ isActive }) => (
+                  <SidebarMenuButton isActive={isActive}>
+                    <Users />
+                    Usuários
+                  </SidebarMenuButton>
+                )}
+              </NavLink>
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
@@ -113,6 +128,23 @@ function WorkspaceNav({ id }: { id: string }) {
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
+  )
+}
+
+function Account() {
+  const { user, refresh } = useAuth()
+  const logout = () => api('/auth/logout', { method: 'POST' }).then(refresh)
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <Link to="/conta" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md hover:text-foreground">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[12px] font-medium">{user.name[0]?.toUpperCase()}</div>
+        <span className="truncate text-[14px]">{user.name}</span>
+      </Link>
+      <button type="button" aria-label="Sair" title="Sair" onClick={logout} className="text-muted-foreground hover:text-foreground">
+        <LogOut className="size-4" />
+      </button>
+    </div>
   )
 }
 

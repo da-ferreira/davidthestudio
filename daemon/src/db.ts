@@ -56,6 +56,32 @@ db.exec(`
   );
 `)
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    admin INTEGER NOT NULL DEFAULT 0,
+    disabled_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    expires_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS invites (
+    id TEXT PRIMARY KEY,
+    token TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    expires_at TEXT NOT NULL,
+    used_by TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+`)
+
 // Colunas acrescentadas depois da criação da tabela.
 const ticketCols = (db.prepare('PRAGMA table_info(tickets)').all() as { name: string }[]).map((c) => c.name)
 if (!ticketCols.includes('prs')) db.exec("ALTER TABLE tickets ADD COLUMN prs TEXT NOT NULL DEFAULT '{}'")
@@ -63,5 +89,6 @@ if (!ticketCols.includes('diff')) db.exec('ALTER TABLE tickets ADD COLUMN diff T
 if (!ticketCols.includes('stage')) db.exec("ALTER TABLE tickets ADD COLUMN stage TEXT NOT NULL DEFAULT 'implement'")
 if (!ticketCols.includes('agent')) db.exec("ALTER TABLE tickets ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'")
 if (!ticketCols.includes('gates')) db.exec("ALTER TABLE tickets ADD COLUMN gates TEXT NOT NULL DEFAULT '[]'")
+if (!ticketCols.includes('created_by')) db.exec('ALTER TABLE tickets ADD COLUMN created_by TEXT REFERENCES users(id)')
 const testCols = (db.prepare('PRAGMA table_info(test_runs)').all() as { name: string }[]).map((c) => c.name)
 if (!testCols.includes('tree')) db.exec('ALTER TABLE test_runs ADD COLUMN tree TEXT')

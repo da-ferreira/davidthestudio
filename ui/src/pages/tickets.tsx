@@ -66,6 +66,7 @@ export function Tickets() {
                   <TableHead className="w-24 pl-4">Ticket</TableHead>
                   <TableHead>Título</TableHead>
                   <TableHead>Repositórios</TableHead>
+                  <TableHead>Autor</TableHead>
                   <TableHead>Agente</TableHead>
                   <TableHead className="text-right">PRs</TableHead>
                   <TableHead>Etapa</TableHead>
@@ -81,6 +82,7 @@ export function Tickets() {
                     </TableCell>
                     <TableCell className="font-medium">{t.title}</TableCell>
                     <TableCell className="text-muted-foreground">{t.repos.join(', ')}</TableCell>
+                    <TableCell className="text-muted-foreground">{t.author ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{agentLabel(t)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{stageLabel(t.stage)}</TableCell>
