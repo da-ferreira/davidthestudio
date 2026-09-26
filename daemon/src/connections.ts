@@ -1,9 +1,10 @@
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AgentKind, AgentStatus, Connections, GithubStatus } from '@studio/shared'
+import { CONTAINERS, containerName, forwardKeys, homeMounts, spawnInContainer } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import { HttpError } from './http-error.ts'
 import { isSealed, open, seal } from './secrets.ts'
@@ -25,8 +26,11 @@ type Owner = { id: string; admin: boolean }
 type Env = Record<string, string>
 
 // O admin usa as pastas padrão da máquina (o login que já existe nela); os outros, uma pasta própria.
+// Com containers o login da máquina não entra no container, então o admin também tem a sua.
+const usesMachine = (user: Owner) => user.admin && !CONTAINERS
+
 function home(user: Owner, agent: AgentKind) {
-  if (user.admin) return undefined
+  if (usesMachine(user)) return undefined
   const dir = path.join(DATA_DIR, 'users', user.id, agent)
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
@@ -86,17 +90,35 @@ export function gitEnv(user: Owner): Env {
   }
 }
 
-function cli(file: string, args: string[], env: Env | undefined, stdin?: string): Promise<{ code: number; out: string }> {
+// A CLI do agente, na máquina ou no container (onde as credenciais ficam no formato do Linux).
+function spawnCli(user: Owner, agent: AgentKind, args: string[]): ChildProcess {
+  const env = agent === 'claude' ? claudeEnv(user) : codexEnv(user)
+  if (CONTAINERS) {
+    const name = containerName('login', `${user.id}-${agent}-${Math.random().toString(36).slice(2, 8)}`)
+    return spawnInContainer({ name, cwd: '/home/agent', mounts: homeMounts(env), command: agent, args, env: env!, envKeys: forwardKeys(env!) })
+  }
+  const [file, all] = agent === 'claude' ? [CLAUDE, args] : [process.execPath, [CODEX, ...args]]
+  return spawn(file, all, { env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] })
+}
+
+function cli(user: Owner, agent: AgentKind, args: string[], stdin?: string): Promise<{ code: number; out: string }> {
   return new Promise((resolve) => {
-    const child = execFile(file, args, { env: env ?? process.env, timeout: 30_000 }, (err, stdout, stderr) =>
-      resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, out: `${stdout}${stderr}`.trim() }),
-    )
-    if (stdin !== undefined) child.stdin!.end(stdin)
+    const child = spawnCli(user, agent, args)
+    let out = ''
+    child.stdout!.on('data', (b) => (out += b))
+    child.stderr!.on('data', (b) => (out += b))
+    const timer = setTimeout(() => child.kill(), CONTAINERS ? 60_000 : 30_000)
+    child.on('error', () => {})
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve({ code: code ?? 1, out: out.trim() })
+    })
+    child.stdin!.end(stdin)
   })
 }
 
-const codexCli = (user: Owner, args: string[], stdin?: string) => cli(process.execPath, [CODEX, ...args], codexEnv(user), stdin)
-const claudeCli = (user: Owner, args: string[]) => cli(CLAUDE, args, claudeEnv(user))
+const codexCli = (user: Owner, args: string[], stdin?: string) => cli(user, 'codex', args, stdin)
+const claudeCli = (user: Owner, args: string[]) => cli(user, 'claude', args)
 
 type Login = { child: ChildProcess; out: string; info: Promise<{ url: string; code: string | null }>; shown: { url: string; code: string | null } | null }
 const logins = new Map<string, Login>()
@@ -107,19 +129,19 @@ export async function agentStatus(user: Owner, agent: AgentKind): Promise<AgentS
   const login = logins.get(loginKey(user, agent))?.shown ?? null
   if (agent === 'claude') {
     const key = credential(user.id, 'anthropic')
-    if (key) return { connected: true, method: 'apikey', account: key.account, login: null }
+    if (key) return { connected: true, method: 'apikey', account: key.account, login: null, machine: false }
     const { out } = await claudeCli(user, ['auth', 'status', '--json'])
     let s: { loggedIn?: boolean; authMethod?: string; email?: string } = {}
     try {
       s = JSON.parse(out)
     } catch {}
     const method = !s.loggedIn ? null : s.authMethod === 'claude.ai' ? 'subscription' : 'apikey'
-    return { connected: !!s.loggedIn, method, account: s.email ?? null, login }
+    return { connected: !!s.loggedIn, method, account: s.email ?? null, login, machine: usesMachine(user) }
   }
   const { code, out } = await codexCli(user, ['login', 'status'])
   const detail = out.split('\n').find((l) => l.startsWith('Logged in')) ?? ''
   const method = code !== 0 ? null : /ChatGPT/.test(detail) ? 'subscription' : 'apikey'
-  return { connected: code === 0, method, account: detail.split(' - ')[1]?.trim() ?? null, login }
+  return { connected: code === 0, method, account: detail.split(' - ')[1]?.trim() ?? null, login, machine: usesMachine(user) }
 }
 
 export async function connections(user: Owner): Promise<Connections> {
@@ -133,10 +155,7 @@ export function startLogin(user: Owner, agent: AgentKind) {
   const key = loginKey(user, agent)
   const existing = logins.get(key)
   if (existing) return existing.info
-  const child =
-    agent === 'claude'
-      ? spawn(CLAUDE, ['auth', 'login'], { env: claudeEnv(user) ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] })
-      : spawn(process.execPath, [CODEX, 'login', '--device-auth'], { env: codexEnv(user) ?? process.env, stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawnCli(user, agent, agent === 'claude' ? ['auth', 'login'] : ['login', '--device-auth'])
   const login: Login = { child, out: '', shown: null, info: null! }
   login.info = new Promise((resolve, reject) => {
     const onData = (b: Buffer) => {

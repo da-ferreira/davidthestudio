@@ -6,6 +6,7 @@ import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
+import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
@@ -340,9 +341,14 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
       if (e.type === 'result') ok = e.ok
     },
   }
-  const session = t.agent === 'codex' ? codex.start({ ...common, env: codexEnv(owner(t)), secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
+  const env = t.agent === 'codex' ? codexEnv(owner(t)) : claudeEnv(owner(t))
+  const container = CONTAINERS
+    ? { name: containerName('ticket', t.id), mounts: [...taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), ...homeMounts(env)] }
+    : undefined
+  const session = t.agent === 'codex' ? codex.start({ ...common, env, container, secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
     ...common,
-    env: claudeEnv(owner(t)),
+    env,
+    container,
     // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
     extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
     onAsk: (askId, ask, signal) =>

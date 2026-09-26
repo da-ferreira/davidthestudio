@@ -5,6 +5,7 @@ import type { AgentEvent, Conversation, ConversationStatus, NewConversation, Tic
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentStatus, claudeEnv, codexEnv } from './connections.ts'
+import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
@@ -153,10 +154,15 @@ async function run(r: Row, prompt: string) {
         if (e.type === 'result') ok = e.ok
       },
     }
+    const env = r.agent === 'codex' ? codexEnv(owner(r)) : claudeEnv(owner(r))
+    const names = repos.map((repo) => repo.name)
+    const container = CONTAINERS
+      ? { name: containerName('conv', r.id), mounts: [...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false), ...homeMounts(env)] }
+      : undefined
     session =
       r.agent === 'codex'
-        ? codex.start({ ...common, env: codexEnv(owner(r)), secretDirs: [workspaceRoot(r.workspace_id), r.dir] })
-        : claude.start({ ...common, env: claudeEnv(owner(r)) })
+        ? codex.start({ ...common, env, container, secretDirs: [workspaceRoot(r.workspace_id), r.dir] })
+        : claude.start({ ...common, env, container })
   } catch (err) {
     record(r.id, { type: 'result', ok: false, durationMs: 0, turns: 0, error: String((err as Error)?.message ?? err) })
     return setStatus(r.id, 'error')

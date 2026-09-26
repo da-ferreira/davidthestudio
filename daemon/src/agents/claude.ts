@@ -1,6 +1,7 @@
 import path from 'node:path'
-import { query, type HookCallback, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type HookCallback, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, Ask, Question, Reply } from '@studio/shared'
+import { forwardKeys, spawnInContainer, type Mount } from '../containers.ts'
 
 const MAX_OUTPUT = 4000
 
@@ -18,6 +19,8 @@ type StartOptions = {
   readOnly?: boolean
   // Ambiente completo do processo (login do usuário); ausente herda o do daemon.
   env?: Record<string, string>
+  // Roda o agente num container com só estas pastas montadas.
+  container?: { name: string; mounts: Mount[] }
   onEvent: (e: AgentEvent) => void
   // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
   onAsk?: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
@@ -61,6 +64,7 @@ export function start(o: StartOptions): Session {
       resume: o.resume ?? undefined,
       additionalDirectories: o.extraDirs,
       env: o.env,
+      spawnClaudeCodeProcess: o.container && inContainer(o.container, o.cwd),
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
       permissionMode: o.readOnly ? 'default' : 'acceptEdits',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },
@@ -100,6 +104,16 @@ export function start(o: StartOptions): Session {
       setTimeout(() => q.close(), 5000).unref()
     },
     done,
+  }
+}
+
+// Os args do SDK valem para o binário nativo, que no container é o `claude` da imagem.
+function inContainer(c: { name: string; mounts: Mount[] }, cwd: string): NonNullable<Options['spawnClaudeCodeProcess']> {
+  return (s) => {
+    const env = s.env as Record<string, string>
+    const child = spawnInContainer({ name: c.name, cwd: s.cwd ?? cwd, mounts: c.mounts, command: 'claude', args: s.args, env, envKeys: forwardKeys(env) })
+    s.signal.addEventListener('abort', () => child.kill(), { once: true })
+    return child
   }
 }
 

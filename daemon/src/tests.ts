@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import type { ManifestRepo, TestRun, TestStatus, TestWarning, Ticket } from '@studio/shared'
+import { CONTAINERS, containerName, spawnInContainer, taskMounts, type Mount } from './containers.ts'
 import { db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
@@ -101,7 +102,12 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
     run.output = (run.output + chunk).slice(-MAX_OUTPUT)
     emit(t.id, { kind: 'test-output', runId: id, chunk })
   }
-  const env = { ...process.env, ...parseEnv(repoEnv(t.workspaceId, repo.name) ?? ''), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
+  const repoVars = { ...parseEnv(repoEnv(t.workspaceId, repo.name) ?? ''), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
+  const env = { ...process.env, ...repoVars }
+  // No container entram só as variáveis do repo, não as do daemon.
+  const container = CONTAINERS
+    ? { name: containerName('test', t.id), mounts: taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), envKeys: Object.keys(repoVars) }
+    : undefined
 
   let status: TestStatus
   let code: number | null = null
@@ -109,13 +115,13 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
     const install = await installCommand(mainDir, cwd)
     if (install) {
       write(`$ ${install}\n`)
-      const r = await exec(install, cwd, env, write, slot)
+      const r = await exec(install, cwd, env, write, slot, container)
       if (r.code === 0) markInstalled(cwd)
       else throw new Error(r.timedOut ? 'tempo esgotado na instalação' : 'a instalação das dependências falhou')
     }
     if (slot.stopped) throw new Error('parado')
     write(`$ ${repo.test}\n`)
-    const r = await exec(repo.test!, cwd, env, write, slot)
+    const r = await exec(repo.test!, cwd, env, write, slot, container)
     code = r.code
     if (slot.stopped) status = 'stopped'
     else if (r.timedOut) {
@@ -174,15 +180,20 @@ function summary(run: TestRun) {
 }
 
 // Grupo de processos próprio (detached) para parar também os filhos: npm test -> jest -> workers.
+// No container, remover o container já encerra tudo.
 function exec(
   command: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
   write: (s: string) => void,
   slot: { stop: () => void },
+  container?: { name: string; mounts: Mount[]; envKeys: string[] },
 ): Promise<{ code: number | null; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', ['-c', command], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = container
+      ? spawnInContainer({ ...container, cwd, command: 'sh', args: ['-c', command], env })
+      : spawn('sh', ['-c', command], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    if (container) child.stdin!.end()
     let timedOut = false
     const signal = (sig: NodeJS.Signals) => {
       try {
@@ -191,10 +202,12 @@ function exec(
         // o grupo já terminou
       }
     }
-    const kill = () => {
-      signal('SIGTERM')
-      setTimeout(() => signal('SIGKILL'), 5000).unref()
-    }
+    const kill = container
+      ? () => void child.kill()
+      : () => {
+          signal('SIGTERM')
+          setTimeout(() => signal('SIGKILL'), 5000).unref()
+        }
     slot.stop = kill
     const timer = setTimeout(() => {
       timedOut = true

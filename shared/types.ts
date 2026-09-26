@@ -17,6 +17,8 @@ export type AgentStatus = {
   // Conta ou final da chave, para a pessoa saber com o que está conectada.
   account: string | null
   login: { url: string; code: string | null } | null
+  // Admin sem containers: usa o login do Claude/Codex desta máquina.
+  machine: boolean
 }
 
 export type Connections = { claude: AgentStatus; codex: AgentStatus; github: GithubStatus }

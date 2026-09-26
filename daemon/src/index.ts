@@ -3,6 +3,7 @@ import websocket from '@fastify/websocket'
 import type { AgentKind, ApiError, DocStage, Health, NewConversation, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import * as conn from './connections.ts'
+import { CONTAINERS, ensureImage, IMAGE } from './containers.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
@@ -267,4 +268,8 @@ app.get<{ Params: { id: string } }>('/ws/tickets/:id', { websocket: true }, (soc
 })
 
 // Só localhost: o daemon roda comandos na máquina; expor fica para a instalação em servidor.
+if (CONTAINERS) {
+  console.log(`Preparando a imagem do agente (${IMAGE})…`)
+  await ensureImage()
+}
 await app.listen({ port: PORT, host: '127.0.0.1' })

@@ -1,5 +1,6 @@
 import { Codex, type ThreadEvent, type ThreadItem } from '@openai/codex-sdk'
 import type { AgentEvent } from '@studio/shared'
+import { codexLauncher, forwardKeys, removeContainer, type Mount } from '../containers.ts'
 import type { Session } from './claude.ts'
 
 const MAX_OUTPUT = 4000
@@ -20,6 +21,8 @@ type StartOptions = {
   secretDirs: string[]
   // Ambiente completo do processo (CODEX_HOME do usuário); ausente herda o do daemon.
   env?: Record<string, string>
+  // Roda o agente num container com só estas pastas montadas.
+  container?: { name: string; mounts: Mount[] }
   onEvent: (e: AgentEvent) => void
 }
 
@@ -33,8 +36,11 @@ export function start(o: StartOptions): Session {
     ...o.secretDirs.map((d) => `${JSON.stringify(d)}={${SECRETS.map((s) => `${JSON.stringify(s)}="deny"`).join(', ')}}`),
   ]
   // Sem sandboxMode na thread: passar um modo explícito descarta o perfil de permissões.
+  // O SDK acrescenta estas chaves ao ambiente do processo; o container recebe só as do agente.
+  const keys = [...new Set([...forwardKeys(o.env ?? {}), 'CODEX_API_KEY', 'OPENAI_API_KEY', 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'])]
   const codex = new Codex({
     env: o.env,
+    codexPathOverride: o.container && codexLauncher(o.container.name, o.cwd, o.container.mounts, keys),
     config: {
       developer_instructions: o.instructions,
       default_permissions: profile,
@@ -82,6 +88,7 @@ export function start(o: StartOptions): Session {
       closed = true
       queue.length = 0
       abort.abort()
+      if (o.container) await removeContainer(o.container.name)
     },
     done,
   }

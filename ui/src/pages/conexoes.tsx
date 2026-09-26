@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Topbar } from '@/components/topbar'
 import { ApiError, api } from '@/lib/api'
-import { useAuth } from '@/lib/auth'
 
 const NAME: Record<AgentKind, string> = { claude: 'Claude Code', codex: 'Codex' }
 const METHOD = { subscription: 'assinatura', apikey: 'chave de API' }
@@ -64,12 +63,11 @@ function SecretForm({ hint, placeholder, button, busy, onSave }: { hint: string;
 }
 
 function AgentCard({ agent, status, load }: { agent: AgentKind; status: AgentStatus; load: () => Promise<unknown> }) {
-  const { user } = useAuth()
   const { busy, error, act } = useAct(load)
   const [code, setCode] = useState('')
   const base = `/me/agents/${agent}`
   const login = status.login
-  const machineLogout = user.admin && status.method === 'subscription'
+  const machineLogout = status.machine && status.method === 'subscription'
 
   const sendCode = (e: FormEvent) => {
     e.preventDefault()
