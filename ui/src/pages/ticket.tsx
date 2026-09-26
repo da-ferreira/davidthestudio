@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
-import { TicketStatusBadge, isActive, modelLabel } from '@/components/ticket-status'
+import { CloseTicketButton } from '@/components/close-ticket'
+import { TicketStatusBadge, isActive, isClosed, modelLabel } from '@/components/ticket-status'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,7 @@ export function Ticket() {
                 <h1 className="text-2xl font-medium tracking-[-0.025em]">{ticket.title}</h1>
                 <TicketStatusBadge status={ticket.status} />
                 {isActive(ticket) && <StopButton ticketId={ticket.id} />}
+                {!isActive(ticket) && !isClosed(ticket) && <CloseTicketButton ticket={ticket} />}
               </div>
               <div className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
                 <Badge variant="outline" className="h-6 gap-1.5 font-mono font-normal">
@@ -77,7 +79,7 @@ export function Ticket() {
                   </TabsTrigger>
                 </TabsList>
                 {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
-                <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>
+                {!isClosed(ticket) && <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
               </div>
               <TabsContent value="log" className="flex min-h-0 flex-col">
                 <LogPanel ticket={ticket} events={events} strip={strip} />
@@ -212,7 +214,11 @@ function ChatPanel({ ticket, events }: { ticket: TicketT; events: TicketEvent[] 
         )}
         <div ref={end} />
       </div>
-      <Composer ticket={ticket} />
+      {isClosed(ticket) ? (
+        <p className="text-center text-[13px] text-muted-foreground">Ticket encerrado. A conversa fica só para consulta.</p>
+      ) : (
+        <Composer ticket={ticket} />
+      )}
     </aside>
   )
 }

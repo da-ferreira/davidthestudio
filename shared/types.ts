@@ -31,7 +31,8 @@ export type WorkspaceDetail = Workspace & { repos: RepoStatus[] }
 export type ApiError = { error: string; reasons?: string[] }
 
 // waiting: o agente parou numa pergunta ou pedido de permissão e espera a resposta na tela.
-export type TicketStatus = 'running' | 'waiting' | 'done' | 'error' | 'interrupted'
+// closed/discarded: encerrado; as worktrees foram removidas e o diff ficou gravado.
+export type TicketStatus = 'running' | 'waiting' | 'done' | 'error' | 'interrupted' | 'closed' | 'discarded'
 
 export type Ticket = {
   id: string

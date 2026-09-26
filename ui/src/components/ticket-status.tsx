@@ -8,6 +8,8 @@ const STATUS: Record<TicketStatus, { label: string; className: string }> = {
   done: { label: 'Concluído', className: 'bg-green-50 text-green-700' },
   error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
   interrupted: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },
+  closed: { label: 'Encerrado', className: 'bg-neutral-100 text-neutral-600' },
+  discarded: { label: 'Descartado', className: 'bg-neutral-100 text-neutral-500' },
 }
 
 export const MODELS = [
@@ -29,3 +31,4 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 }
 
 export const isActive = (t: Ticket) => t.status === 'running' || t.status === 'waiting'
+export const isClosed = (t: Ticket) => t.status === 'closed' || t.status === 'discarded'

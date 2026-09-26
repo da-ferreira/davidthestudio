@@ -62,6 +62,10 @@ app.post<{ Params: { id: string } }>('/api/tickets/:id/pr', async (req) => {
   await tickets.openPrs(req.params.id)
   return tickets.getDiff(req.params.id)
 })
+app.post<{ Params: { id: string }; Body: { discard?: boolean } }>('/api/tickets/:id/close', async (req) => {
+  await tickets.closeTicket(req.params.id, !!req.body?.discard)
+  return tickets.getTicket(req.params.id)
+})
 app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:id/asks/:askId', async (req) => {
   tickets.answerAsk(req.params.id, req.params.askId, req.body)
   return tickets.getTicket(req.params.id)

@@ -4,7 +4,7 @@ import type { FileChange, RepoDiff, Ticket } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { isActive } from '@/components/ticket-status'
+import { isActive, isClosed } from '@/components/ticket-status'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -43,38 +43,44 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-col gap-2 rounded-[14px] border border-[#efefef] px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Mensagem do commit" className="flex-1" />
-          <Button disabled={active || !uncommitted || !message.trim() || !!busy} onClick={() => act('commit')}>
-            <GitCommitHorizontal />
-            {busy === 'commit' ? 'Commitando…' : 'Commitar'}
-          </Button>
-          <Button variant="outline" disabled={active || !canPr || !!busy} onClick={() => act('pr')}>
-            {busy === 'pr' ? 'Enviando…' : hasPr ? 'Enviar commits' : 'Abrir PR'}
-          </Button>
-        </div>
-        <span className="text-[12.5px] text-muted-foreground">
-          {active
-            ? 'O agente está trabalhando; espere ele terminar ou pare para commitar.'
-            : uncommitted
-              ? `${uncommitted} arquivo(s) sem commit. O commit sai com a sua identidade git e o Claude como coautor.`
-              : 'Tudo commitado.'}
-        </span>
-        {error && (
-          <div className="text-[13px] text-destructive">
-            {error.message}
-            {error.reasons?.map((r) => (
-              <pre key={r} className="mt-1 font-mono text-[12px] whitespace-pre-wrap">
-                {r}
-              </pre>
-            ))}
+      {isClosed(ticket) ? (
+        <span className="text-[12.5px] text-muted-foreground">Diff gravado quando o ticket foi encerrado.</span>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-[14px] border border-[#efefef] px-4 py-3.5">
+          <div className="flex items-center gap-2">
+            <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Mensagem do commit" className="flex-1" />
+            <Button disabled={active || !uncommitted || !message.trim() || !!busy} onClick={() => act('commit')}>
+              <GitCommitHorizontal />
+              {busy === 'commit' ? 'Commitando…' : 'Commitar'}
+            </Button>
+            <Button variant="outline" disabled={active || !canPr || !!busy} onClick={() => act('pr')}>
+              {busy === 'pr' ? 'Enviando…' : hasPr ? 'Enviar commits' : 'Abrir PR'}
+            </Button>
           </div>
-        )}
-      </div>
+          <span className="text-[12.5px] text-muted-foreground">
+            {active
+              ? 'O agente está trabalhando; espere ele terminar ou pare para commitar.'
+              : uncommitted
+                ? `${uncommitted} arquivo(s) sem commit. O commit sai com a sua identidade git e o Claude como coautor.`
+                : 'Tudo commitado.'}
+          </span>
+          {error && (
+            <div className="text-[13px] text-destructive">
+              {error.message}
+              {error.reasons?.map((r) => (
+                <pre key={r} className="mt-1 font-mono text-[12px] whitespace-pre-wrap">
+                  {r}
+                </pre>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto">
         {diffs === null && !error && <span className="text-muted-foreground">Carregando…</span>}
-        {diffs?.map((d) => <RepoSection key={d.repo} diff={d} />)}
+        {diffs?.map((d) => (
+          <RepoSection key={d.repo} diff={d} />
+        ))}
       </div>
     </div>
   )
@@ -125,7 +131,12 @@ const STATUS_LABEL = { A: 'novo', M: 'alterado', D: 'removido' }
 function FileBlock({ file }: { file: FileChange }) {
   const [open, setOpen] = useState(true)
   const lines = file.patch.split('\n')
-  const body = lines.slice(Math.max(0, lines.findIndex((l) => l.startsWith('@@'))))
+  const body = lines.slice(
+    Math.max(
+      0,
+      lines.findIndex((l) => l.startsWith('@@')),
+    ),
+  )
 
   return (
     <div className="overflow-hidden rounded-[12px] border border-[#efefef]">

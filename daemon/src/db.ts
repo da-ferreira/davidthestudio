@@ -45,3 +45,4 @@ db.exec(`
 // Colunas acrescentadas depois da criação da tabela.
 const ticketCols = (db.prepare('PRAGMA table_info(tickets)').all() as { name: string }[]).map((c) => c.name)
 if (!ticketCols.includes('prs')) db.exec("ALTER TABLE tickets ADD COLUMN prs TEXT NOT NULL DEFAULT '{}'")
+if (!ticketCols.includes('diff')) db.exec('ALTER TABLE tickets ADD COLUMN diff TEXT')

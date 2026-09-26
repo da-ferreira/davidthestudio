@@ -1,17 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
-import type { Ticket, Workspace } from '@studio/shared'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import type { Ticket, TicketStatus, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Topbar } from '@/components/topbar'
 import { TicketStatusBadge, modelLabel } from '@/components/ticket-status'
 import { api } from '@/lib/api'
+
+const FILTERS: { id: string; label: string; statuses: TicketStatus[] | null }[] = [
+  { id: 'todos', label: 'Todos', statuses: null },
+  { id: 'andamento', label: 'Em andamento', statuses: ['running', 'waiting'] },
+  { id: 'revisar', label: 'Para revisar', statuses: ['done', 'error', 'interrupted'] },
+  { id: 'encerrados', label: 'Encerrados', statuses: ['closed', 'discarded'] },
+]
 
 export function Tickets() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [ws, setWs] = useState<Workspace | null>(null)
   const [items, setItems] = useState<Ticket[] | null>(null)
+  const [params, setParams] = useSearchParams()
+  const filter = FILTERS.find((f) => f.id === params.get('status')) ?? FILTERS[0]
+  const count = (f: (typeof FILTERS)[number]) => items?.filter((t) => !f.statuses || f.statuses.includes(t.status)).length ?? 0
+  const shown = items?.filter((t) => !filter.statuses || filter.statuses.includes(t.status))
 
   useEffect(() => {
     api<Workspace[]>('/workspaces').then((all) => setWs(all.find((w) => w.id === id) ?? null))
@@ -33,6 +45,19 @@ export function Tickets() {
           </div>
         )}
         {!!items?.length && (
+          <Tabs value={filter.id} onValueChange={(v) => setParams(v === 'todos' ? {} : { status: v }, { replace: true })}>
+            <TabsList>
+              {FILTERS.map((f) => (
+                <TabsTrigger key={f.id} value={f.id}>
+                  {f.label}
+                  <span className="text-muted-foreground">{count(f)}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        )}
+        {!!items?.length && shown?.length === 0 && <p className="text-muted-foreground">Nenhum ticket neste filtro.</p>}
+        {!!shown?.length && (
           <div className="rounded-xl border">
             <Table>
               <TableHeader>
@@ -41,12 +66,13 @@ export function Tickets() {
                   <TableHead>Título</TableHead>
                   <TableHead>Repositórios</TableHead>
                   <TableHead>Modelo</TableHead>
+                  <TableHead className="text-right">PRs</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Criado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((t) => (
+                {shown.map((t) => (
                   <TableRow key={t.id} className="cursor-pointer" onClick={() => navigate(`/w/${id}/tickets/${t.id}`)}>
                     <TableCell className="pl-4 font-mono text-[12px] text-muted-foreground">
                       <Link to={`/w/${id}/tickets/${t.id}`}>{t.id}</Link>
@@ -54,6 +80,7 @@ export function Tickets() {
                     <TableCell className="font-medium">{t.title}</TableCell>
                     <TableCell className="text-muted-foreground">{t.repos.join(', ')}</TableCell>
                     <TableCell className="text-muted-foreground">{modelLabel(t.model)}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>
                     <TableCell>
                       <TicketStatusBadge status={t.status} />
                     </TableCell>

@@ -26,6 +26,7 @@ type Row = {
   task_dir: string
   session_id: string | null
   prs: string
+  diff: string | null
   created_at: string
 }
 
@@ -187,6 +188,7 @@ export function sendMessage(id: string, input: string) {
   const text = input?.trim()
   if (!text) throw new HttpError(400, 'Mensagem vazia')
   const t = getTicket(id)
+  assertOpen(t)
   const s = sessions.get(id)
   if (s && stopping.has(id)) throw new HttpError(409, 'O agente está parando; mande de novo em instantes')
   record(id, { type: 'user', text })
@@ -266,7 +268,14 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
 
 const exec = promisify(execFile)
 
+const isClosed = (t: Ticket) => t.status === 'closed' || t.status === 'discarded'
+
+function assertOpen(t: Ticket) {
+  if (isClosed(t)) throw new HttpError(409, 'O ticket está encerrado')
+}
+
 function assertIdle(t: Ticket) {
+  assertOpen(t)
   if (t.status === 'running' || t.status === 'waiting') throw new HttpError(409, 'Pare o agente ou espere ele terminar antes')
 }
 
@@ -276,6 +285,8 @@ function baseBranchOf(t: Ticket, repo: string) {
 
 export async function getDiff(id: string): Promise<RepoDiff[]> {
   const t = getTicket(id)
+  const saved = getRow(id).diff
+  if (saved) return JSON.parse(saved)
   return Promise.all(
     t.repos.map(async (repo) => {
       const dir = path.join(t.taskDir, repo)
@@ -363,4 +374,29 @@ export async function openPrs(id: string) {
   }
   if (!acted) throw new HttpError(400, 'Nada para enviar: commite as mudanças primeiro')
   emit(id, { kind: 'ticket', ticket: getTicket(id) })
+}
+
+// Grava o diff e remove as worktrees; a branch fica no repo. Com mudanças não
+// commitadas ou commits sem push, só encerra se o humano escolheu descartar.
+export async function closeTicket(id: string, discard: boolean) {
+  const t = getTicket(id)
+  assertIdle(t)
+  const diffs = await getDiff(id)
+  const reasons = diffs.flatMap((d) => [
+    ...(d.uncommitted ? [`${d.repo}: ${d.uncommitted} arquivo(s) sem commit`] : []),
+    ...(d.unpushed ? [`${d.repo}: ${d.unpushed} commit(s) sem push`] : []),
+  ])
+  if (reasons.length && !discard) throw new HttpError(409, 'Há trabalho que seria perdido', reasons)
+
+  db.prepare('UPDATE tickets SET diff = ? WHERE id = ?').run(JSON.stringify(diffs), id)
+  const root = workspaceRoot(t.workspaceId)
+  for (const repo of t.repos) await g.removeWorktree(path.join(root, repo), path.join(t.taskDir, repo))
+  // Só sobram os symlinks do contexto; rmSync não segue symlink.
+  fs.rmSync(t.taskDir, { recursive: true, force: true })
+  const status = reasons.length ? 'discarded' : 'closed'
+  record(id, {
+    type: 'note',
+    text: `${status === 'closed' ? 'ticket concluído' : 'ticket descartado'}; worktrees removidas, a branch ${t.branch} fica`,
+  })
+  setStatus(id, status)
 }
