@@ -3,7 +3,8 @@ export type Health = { ok: true; version: string }
 export type User = { id: string; username: string; name: string; email: string; admin: boolean }
 
 // suggested: nome e e-mail do git da máquina, para preencher o primeiro cadastro.
-export type AuthState = { user: User | null; needsSetup: boolean; suggested?: { name: string; email: string } }
+// setupCode: o cadastro inicial pede o código mostrado no fim da instalação.
+export type AuthState = { user: User | null; needsSetup: boolean; setupCode?: boolean; suggested?: { name: string; email: string } }
 
 export type NewUser = { username: string; name: string; email: string; password: string }
 

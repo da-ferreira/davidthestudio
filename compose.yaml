@@ -1,0 +1,28 @@
+# Instalação do david the studio num servidor. Use o install.sh, que cria o .env e sobe tudo.
+services:
+  daemon:
+    build: { context: ., dockerfile: docker/studio/Dockerfile, target: daemon }
+    restart: unless-stopped
+    environment:
+      STUDIO_SETUP_CODE: ${STUDIO_SETUP_CODE}
+    # Mesmo caminho dentro e fora: o daemon monta essas pastas nos containers do agente pelo Docker da máquina.
+    volumes:
+      - /var/lib/studio:/var/lib/studio
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - ${DOCKER_GID}
+  web:
+    build: { context: ., dockerfile: docker/studio/Dockerfile, target: web }
+    restart: unless-stopped
+    environment:
+      STUDIO_ADDRESS: ${STUDIO_ADDRESS}
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [daemon]
+volumes:
+  caddy-data:
+  caddy-config:

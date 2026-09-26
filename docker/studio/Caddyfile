@@ -1,0 +1,15 @@
+# STUDIO_ADDRESS: o domínio (HTTPS automático) ou :80 para só http.
+{$STUDIO_ADDRESS} {
+	encode zstd gzip
+	handle /api/* {
+		reverse_proxy daemon:4700
+	}
+	handle /ws/* {
+		reverse_proxy daemon:4700
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

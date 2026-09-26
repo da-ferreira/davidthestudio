@@ -39,7 +39,7 @@ function gitConfig(key: string) {
 
 export function authState(cookie: string | undefined): AuthState {
   const needsSetup = !(db.prepare('SELECT 1 FROM users LIMIT 1').get() as unknown)
-  if (needsSetup) return { user: null, needsSetup, suggested: { name: gitConfig('user.name'), email: gitConfig('user.email') } }
+  if (needsSetup) return { user: null, needsSetup, setupCode: !!SETUP_CODE, suggested: { name: gitConfig('user.name'), email: gitConfig('user.email') } }
   return { user: sessionUser(cookie), needsSetup }
 }
 
@@ -99,8 +99,12 @@ function insertUser(u: NewUser, admin: boolean) {
   return id
 }
 
+// Numa instalação exposta, sem o código qualquer um que abrisse o endereço primeiro viraria admin.
+const SETUP_CODE = process.env.STUDIO_SETUP_CODE
+
 // Primeiro acesso: quem cadastra vira admin e herda os tickets que já existiam.
-export function setup(u: NewUser) {
+export function setup(u: NewUser, code?: string) {
+  if (SETUP_CODE && hash(code?.trim() ?? '') !== hash(SETUP_CODE)) throw new HttpError(403, 'Código de instalação incorreto')
   return db.transaction(() => {
     if (db.prepare('SELECT 1 FROM users LIMIT 1').get()) throw new HttpError(409, 'O administrador já foi cadastrado')
     const id = insertUser(u, true)

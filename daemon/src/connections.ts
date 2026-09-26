@@ -76,7 +76,7 @@ export function codexEnv(user: Owner): Env | undefined {
 export function gitEnv(user: Owner): Env {
   const token = credential(user.id, 'github')?.secret
   if (!token) {
-    if (user.admin) return {}
+    if (usesMachine(user)) return {}
     throw new HttpError(400, 'Conecte o GitHub na tela Conexões')
   }
   return {
@@ -230,7 +230,7 @@ export async function logout(user: Owner, agent: AgentKind) {
 export function githubStatus(user: Owner): GithubStatus {
   const cred = credential(user.id, 'github')
   if (cred) return { connected: true, account: cred.account, machine: false }
-  return { connected: user.admin, account: null, machine: user.admin }
+  return { connected: usesMachine(user), account: null, machine: usesMachine(user) }
 }
 
 export async function saveGithubToken(user: Owner, input: string) {

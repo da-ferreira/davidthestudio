@@ -102,16 +102,15 @@ async function runRepo(t: Ticket, repo: ManifestRepo): Promise<TestStatus> {
     run.output = (run.output + chunk).slice(-MAX_OUTPUT)
     emit(t.id, { kind: 'test-output', runId: id, chunk })
   }
-  const repoVars = { ...parseEnv(repoEnv(t.workspaceId, repo.name) ?? ''), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
-  const env = { ...process.env, ...repoVars }
-  // No container entram só as variáveis do repo, não as do daemon.
-  const container = CONTAINERS
-    ? { name: containerName('test', t.id), mounts: taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), envKeys: Object.keys(repoVars) }
-    : undefined
-
   let status: TestStatus
   let code: number | null = null
   try {
+    const repoVars = { ...parseEnv(repoEnv(t.workspaceId, repo.name) ?? ''), CI: 'true', NO_COLOR: '1', FORCE_COLOR: '0' }
+    const env = { ...process.env, ...repoVars }
+    // No container entram só as variáveis do repo, não as do daemon.
+    const container = CONTAINERS
+      ? { name: containerName('test', t.id), mounts: taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), envKeys: Object.keys(repoVars) }
+      : undefined
     const install = await installCommand(mainDir, cwd)
     if (install) {
       write(`$ ${install}\n`)

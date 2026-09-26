@@ -2,6 +2,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
 import type { AgentKind, ApiError, DocStage, Health, NewConversation, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
+import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
 import { CONTAINERS, ensureImage, IMAGE } from './containers.ts'
 import { HttpError } from './http-error.ts'
@@ -11,8 +12,10 @@ import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
 
 const PORT = Number(process.env.STUDIO_PORT ?? 4700)
+const HOST = process.env.STUDIO_HOST ?? '127.0.0.1'
 
-const app = Fastify({ logger: { level: 'info' } })
+// Atrás do Caddy o HTTPS termina nele; o cabeçalho X-Forwarded-Proto diz ao daemon para marcar o cookie como Secure.
+const app = Fastify({ logger: { level: 'info' }, trustProxy: process.env.STUDIO_TRUST_PROXY === '1' })
 await app.register(websocket)
 
 app.setErrorHandler((err, _req, reply) => {
@@ -51,8 +54,8 @@ const setCookie = (reply: FastifyReply, req: FastifyRequest, token: string | nul
 app.get('/api/health', async (): Promise<Health> => ({ ok: true, version: '0.0.0' }))
 
 app.get('/api/auth/state', async (req) => auth.authState(req.headers.cookie))
-app.post<{ Body: NewUser }>('/api/auth/setup', async (req, reply) => {
-  setCookie(reply, req, auth.setup(req.body))
+app.post<{ Body: NewUser & { setupCode?: string } }>('/api/auth/setup', async (req, reply) => {
+  setCookie(reply, req, auth.setup(req.body, req.body?.setupCode))
   return { ok: true }
 })
 app.post<{ Body: { username: string; password: string } }>('/api/auth/login', async (req, reply) => {
@@ -272,4 +275,5 @@ if (CONTAINERS) {
   console.log(`Preparando a imagem do agente (${IMAGE})…`)
   await ensureImage()
 }
-await app.listen({ port: PORT, host: '127.0.0.1' })
+await app.listen({ port: PORT, host: HOST })
+startBackups()

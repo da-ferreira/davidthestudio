@@ -16,7 +16,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [refresh])
 
   if (!state) return null
-  if (state.needsSetup) return <Cadastro suggested={state.suggested} onDone={refresh} />
+  if (state.needsSetup) return <Cadastro suggested={state.suggested} askCode={!!state.setupCode} onDone={refresh} />
   if (!state.user) return <Entrar onDone={refresh} />
   return <AuthContext.Provider value={{ user: state.user, refresh }}>{children}</AuthContext.Provider>
 }

@@ -91,13 +91,19 @@ function NewUserFields({ value, onChange }: { value: NewUser; onChange: (v: NewU
   )
 }
 
-export function Cadastro({ suggested, onDone }: { suggested?: { name: string; email: string }; onDone: () => void }) {
+export function Cadastro({ suggested, askCode, onDone }: { suggested?: { name: string; email: string }; askCode: boolean; onDone: () => void }) {
   const [u, setU] = useState<NewUser>({ username: '', name: suggested?.name ?? '', email: suggested?.email ?? '', password: '' })
-  const { busy, error, submit } = useSubmit(() => api('/auth/setup', { method: 'POST', body: u }).then(onDone))
+  const [setupCode, setSetupCode] = useState('')
+  const { busy, error, submit } = useSubmit(() => api('/auth/setup', { method: 'POST', body: { ...u, setupCode } }).then(onDone))
 
   return (
     <Card title="Primeiro acesso" subtitle="Crie o administrador. Os outros usuários entram por convite seu.">
       <form onSubmit={submit} className="flex flex-col gap-4">
+        {askCode && (
+          <Field label="Código de instalação">
+            <Input autoComplete="off" spellCheck={false} className="font-mono" placeholder="mostrado no fim da instalação" value={setupCode} onChange={(e) => setSetupCode(e.target.value)} />
+          </Field>
+        )}
         <NewUserFields value={u} onChange={setU} />
         {error && <p className="text-[13px] text-destructive">{error}</p>}
         <Button type="submit" size="lg" disabled={busy}>
