@@ -8,6 +8,7 @@ import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
 import { HttpError } from './http-error.ts'
+import { testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TASKS_DIR = path.join(DATA_DIR, 'tasks')
@@ -65,7 +66,7 @@ export function subscribe(id: string, fn: (m: WsMessage) => void): () => void {
   return () => listeners.get(id)?.delete(fn)
 }
 
-function emit(id: string, m: WsMessage) {
+export function emit(id: string, m: WsMessage) {
   for (const fn of listeners.get(id) ?? []) fn(m)
 }
 
@@ -122,6 +123,7 @@ export function openTickets(workspaceId: string): string[] {
 
 export function deleteTickets(workspaceId: string) {
   db.prepare('DELETE FROM events WHERE ticket_id IN (SELECT id FROM tickets WHERE workspace_id = ?)').run(workspaceId)
+  db.prepare('DELETE FROM test_runs WHERE ticket_id IN (SELECT id FROM tickets WHERE workspace_id = ?)').run(workspaceId)
   db.prepare('DELETE FROM tickets WHERE workspace_id = ?').run(workspaceId)
 }
 
@@ -208,7 +210,7 @@ function contextTarget(root: string, entry: string) {
   return entry === 'CLAUDE.md' && isUnified(root) ? 'AGENTS.md' : entry
 }
 
-function record(id: string, event: AgentEvent) {
+export function record(id: string, event: AgentEvent) {
   const seq = ((db.prepare('SELECT MAX(seq) AS n FROM events WHERE ticket_id = ?').get(id) as { n: number | null }).n ?? 0) + 1
   const at = new Date().toISOString()
   db.prepare('INSERT INTO events (ticket_id, seq, at, data) VALUES (?, ?, ?, ?)').run(id, seq, at, JSON.stringify(event))
@@ -426,7 +428,7 @@ function assertOpen(t: Ticket) {
   if (isClosed(t)) throw new HttpError(409, 'O ticket está encerrado')
 }
 
-function assertIdle(t: Ticket) {
+export function assertIdle(t: Ticket) {
   assertOpen(t)
   if (t.status === 'running' || t.status === 'waiting') throw new HttpError(409, 'Pare o agente ou espere ele terminar antes')
 }
@@ -541,6 +543,7 @@ export async function openPrs(id: string) {
 export async function closeTicket(id: string, discard: boolean) {
   const t = getTicket(id)
   assertIdle(t)
+  if (testsRunning(id)) throw new HttpError(409, 'Pare os testes antes de encerrar')
   const diffs = await getDiff(id)
   const reasons = diffs.flatMap((d) => [
     ...(d.uncommitted ? [`${d.repo}: ${d.uncommitted} arquivo(s) sem commit`] : []),

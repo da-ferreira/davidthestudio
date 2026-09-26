@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
-import { ArrowUp, FileDiff, FileText, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
-import type { AgentEvent, Ask, Reply, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
+import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
+import type { AgentEvent, Ask, Reply, TestRun, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
 import { DocsPanel } from '@/components/docs-panel'
+import { TestsPanel } from '@/components/tests-panel'
 import { StageStepper, hasSdd } from '@/components/stages'
 import { Markdown } from '@/components/markdown'
 import { CloseTicketButton } from '@/components/close-ticket'
@@ -22,6 +23,7 @@ export function Ticket() {
   const [ws, setWs] = useState<Workspace | null>(null)
   const [ticket, setTicket] = useState<TicketT | null>(null)
   const [events, setEvents] = useState<TicketEvent[]>([])
+  const [runs, setRuns] = useState<TestRun[]>([])
   const [error, setError] = useState<string | null>(null)
   const [docs, setDocs] = useState<TicketDocs | null>(null)
 
@@ -37,12 +39,15 @@ export function Ticket() {
 
   useEffect(() => {
     setEvents([])
+    setRuns([])
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const sock = new WebSocket(`${proto}://${location.host}/ws/tickets/${ticketId}`)
     sock.onmessage = (msg) => {
       const m = JSON.parse(msg.data) as WsMessage
       if (m.kind === 'ticket') setTicket(m.ticket)
-      else setEvents((es) => [...es, m.event])
+      else if (m.kind === 'event') setEvents((es) => [...es, m.event])
+      else if (m.kind === 'test') setRuns((rs) => (rs.some((r) => r.id === m.run.id) ? rs.map((r) => (r.id === m.run.id ? m.run : r)) : [...rs, m.run]))
+      else setRuns((rs) => rs.map((r) => (r.id === m.runId ? { ...r, output: r.output + m.chunk } : r)))
     }
     sock.onclose = (e) => e.code === 4404 && setError('Ticket não encontrado')
     return () => sock.close()
@@ -98,6 +103,10 @@ export function Ticket() {
                     <FileDiff />
                     Diff
                   </TabsTrigger>
+                  <TabsTrigger value="tests" className="px-3">
+                    <FlaskConical />
+                    Testes
+                  </TabsTrigger>
                 </TabsList>
                 {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
                 {!isClosed(ticket) && <span className="ml-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
@@ -110,6 +119,9 @@ export function Ticket() {
               </TabsContent>
               <TabsContent value="diff" className="flex min-h-0 flex-col">
                 <DiffPanel ticket={ticket} />
+              </TabsContent>
+              <TabsContent value="tests" className="flex min-h-0 flex-col">
+                <TestsPanel ticket={ticket} runs={runs} />
               </TabsContent>
             </Tabs>
           </div>

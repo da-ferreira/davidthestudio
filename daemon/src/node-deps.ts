@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as g from './git.ts'
@@ -8,7 +9,23 @@ const LOCKS: [file: string, pm: string][] = [
   ['package-lock.json', 'npm'],
 ]
 
+const INSTALL: Record<string, string> = {
+  pnpm: 'pnpm install --frozen-lockfile',
+  yarn: 'yarn install --frozen-lockfile',
+  npm: 'npm ci',
+}
+
+// Marca, dentro do node_modules próprio da worktree, de qual lockfile ele foi instalado.
+const STAMP = '.studio-lock'
+
 const lockOf = (dir: string) => LOCKS.find(([file]) => fs.existsSync(path.join(dir, file)))
+
+const hashOf = (file: string) => createHash('sha1').update(fs.readFileSync(file)).digest('hex')
+
+function sameLock(repo: string, worktree: string, file: string) {
+  const main = path.join(repo, file)
+  return fs.existsSync(main) && fs.readFileSync(main).equals(fs.readFileSync(path.join(worktree, file)))
+}
 
 // Sugere "<pm> test" a partir do scripts.test do package.json. O placeholder do
 // npm init ("no test specified") não conta como teste.
@@ -30,9 +47,7 @@ export async function linkNodeModules(repo: string, worktree: string) {
   const source = path.join(repo, 'node_modules')
   const lock = lockOf(worktree)
   if (!lock || !fs.existsSync(source)) return
-  const [file] = lock
-  const main = path.join(repo, file)
-  if (!fs.existsSync(main) || !fs.readFileSync(main).equals(fs.readFileSync(path.join(worktree, file)))) return
+  if (!sameLock(repo, worktree, lock[0])) return
   fs.symlinkSync(source, path.join(worktree, 'node_modules'))
   await excludeFromGit(repo, '/node_modules')
 }
@@ -48,3 +63,32 @@ export async function excludeFromGit(repo: string, pattern: string) {
 }
 
 export const hasLinkedNodeModules = (worktree: string) => fs.lstatSync(path.join(worktree, 'node_modules'), { throwIfNoEntry: false })?.isSymbolicLink() ?? false
+
+// Antes dos testes. O link vale enquanto o lockfile for igual ao do repo principal; se o
+// agente mudou dependências, a worktree ganha node_modules próprio. Devolve o comando de instalação, se precisar.
+export async function installCommand(repo: string, worktree: string): Promise<string | null> {
+  const lock = lockOf(worktree)
+  if (!lock) return null
+  const [file, pm] = lock
+  const nm = path.join(worktree, 'node_modules')
+  const st = fs.lstatSync(nm, { throwIfNoEntry: false })
+  if (st?.isSymbolicLink()) {
+    if (sameLock(repo, worktree, file)) return null
+    fs.unlinkSync(nm)
+  } else if (!st) {
+    await linkNodeModules(repo, worktree)
+    if (hasLinkedNodeModules(worktree)) return null
+  } else {
+    const stamp = path.join(nm, STAMP)
+    if (fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === hashOf(path.join(worktree, file))) return null
+  }
+  return INSTALL[pm]
+}
+
+export function markInstalled(worktree: string) {
+  const lock = lockOf(worktree)
+  if (!lock) return
+  // Sem dependências, o npm ci nem cria a pasta.
+  fs.mkdirSync(path.join(worktree, 'node_modules'), { recursive: true })
+  fs.writeFileSync(path.join(worktree, 'node_modules', STAMP), hashOf(path.join(worktree, lock[0])))
+}

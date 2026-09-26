@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 import type { ApiError, DocStage, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
 import { HttpError } from './http-error.ts'
+import * as tests from './tests.ts'
 import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
 
@@ -98,6 +99,14 @@ app.post<{ Params: { id: string }; Body: { discard?: boolean } }>('/api/tickets/
   await tickets.closeTicket(req.params.id, !!req.body?.discard)
   return tickets.getTicket(req.params.id)
 })
+app.post<{ Params: { id: string } }>('/api/tickets/:id/tests', async (req) => {
+  tests.runTests(req.params.id)
+  return { ok: true }
+})
+app.post<{ Params: { id: string } }>('/api/tickets/:id/tests/stop', async (req) => {
+  tests.stopTests(req.params.id)
+  return { ok: true }
+})
 app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:id/asks/:askId', async (req) => {
   tickets.answerAsk(req.params.id, req.params.askId, req.body)
   return tickets.getTicket(req.params.id)
@@ -115,6 +124,7 @@ app.get<{ Params: { id: string } }>('/ws/tickets/:id', { websocket: true }, (soc
   }
   send({ kind: 'ticket', ticket })
   for (const event of tickets.listEvents(ticket.id)) send({ kind: 'event', event })
+  for (const run of tests.listRuns(ticket.id)) send({ kind: 'test', run })
   const off = tickets.subscribe(ticket.id, send)
   socket.on('close', off)
 })

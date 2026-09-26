@@ -104,7 +104,26 @@ export type TicketEvent = { seq: number; at: string; event: AgentEvent }
 
 export type TicketDetail = Ticket & { events: TicketEvent[] }
 
-export type WsMessage = { kind: 'event'; event: TicketEvent } | { kind: 'ticket'; ticket: Ticket }
+// error: não chegou a rodar até o fim (instalação falhou, tempo esgotado). interrupted: o daemon caiu no meio.
+export type TestStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error' | 'interrupted'
+
+export type TestRun = {
+  id: number
+  ticketId: string
+  repo: string
+  command: string
+  status: TestStatus
+  exitCode: number | null
+  output: string
+  startedAt: string
+  finishedAt: string | null
+}
+
+export type WsMessage =
+  | { kind: 'event'; event: TicketEvent }
+  | { kind: 'ticket'; ticket: Ticket }
+  | { kind: 'test'; run: TestRun }
+  | { kind: 'test-output'; runId: number; chunk: string }
 
 export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
 

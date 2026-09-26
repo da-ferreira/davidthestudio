@@ -42,6 +42,20 @@ db.exec(`
   );
 `)
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS test_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id),
+    repo TEXT NOT NULL,
+    command TEXT NOT NULL,
+    status TEXT NOT NULL,
+    exit_code INTEGER,
+    output TEXT NOT NULL DEFAULT '',
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+`)
+
 // Colunas acrescentadas depois da criação da tabela.
 const ticketCols = (db.prepare('PRAGMA table_info(tickets)').all() as { name: string }[]).map((c) => c.name)
 if (!ticketCols.includes('prs')) db.exec("ALTER TABLE tickets ADD COLUMN prs TEXT NOT NULL DEFAULT '{}'")
