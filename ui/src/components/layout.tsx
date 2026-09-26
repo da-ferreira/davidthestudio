@@ -8,7 +8,7 @@ export function Layout() {
     <TooltipProvider>
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset>
+        <SidebarInset className="min-w-0">
           <Outlet />
         </SidebarInset>
       </SidebarProvider>

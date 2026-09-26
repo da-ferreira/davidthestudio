@@ -35,8 +35,14 @@ export type WorkspaceDetail = Workspace & { repos: RepoStatus[]; context: Contex
 export type ApiError = { error: string; reasons?: string[] }
 
 // waiting: o agente parou numa pergunta ou pedido de permissão e espera a resposta na tela.
+// approval: a spec ou o plano ficou pronto e espera o humano aprovar.
 // closed/discarded: encerrado; as worktrees foram removidas e o diff ficou gravado.
-export type TicketStatus = 'running' | 'waiting' | 'done' | 'error' | 'interrupted' | 'closed' | 'discarded'
+export type TicketStatus = 'running' | 'waiting' | 'approval' | 'done' | 'error' | 'interrupted' | 'closed' | 'discarded'
+
+export type Stage = 'spec' | 'plan' | 'implement' | 'review'
+
+// Etapas que produzem documento e podem parar para aprovação.
+export type DocStage = 'spec' | 'plan'
 
 export type Ticket = {
   id: string
@@ -49,12 +55,19 @@ export type Ticket = {
   branch: string
   taskDir: string
   sessionId: string | null
+  stage: Stage
+  // Etapas que param para o humano aprovar; as outras avançam sozinhas.
+  gates: DocStage[]
   // repo -> URL do PR aberto pelo studio
   prs: Record<string, string>
   createdAt: string
 }
 
-export type NewTicket = { title: string; description: string; repos: string[]; model: string }
+// sdd false: ticket rápido, começa direto na implementação.
+export type NewTicket = { title: string; description: string; repos: string[]; model: string; sdd: boolean; gates: DocStage[] }
+
+// Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
+export type TicketDocs = Record<DocStage, string | null>
 
 // Evento do agente já traduzido pelo adaptador; é o que fica gravado e vai para a UI.
 export type AgentEvent =

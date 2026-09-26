@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
-import { ArrowUp, FileDiff, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
-import type { AgentEvent, Ask, Reply, Ticket as TicketT, TicketEvent, Workspace, WsMessage } from '@studio/shared'
+import { ArrowUp, FileDiff, FileText, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
+import type { AgentEvent, Ask, Reply, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
+import { DocsPanel } from '@/components/docs-panel'
+import { StageStepper, hasSdd } from '@/components/stages'
 import { Markdown } from '@/components/markdown'
 import { CloseTicketButton } from '@/components/close-ticket'
 import { TicketStatusBadge, isActive, isClosed, modelLabel } from '@/components/ticket-status'
@@ -21,6 +23,13 @@ export function Ticket() {
   const [ticket, setTicket] = useState<TicketT | null>(null)
   const [events, setEvents] = useState<TicketEvent[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [docs, setDocs] = useState<TicketDocs | null>(null)
+
+  // O agente escreve spec.md e plan.md com ferramentas; relê a cada resultado de ferramenta ou mudança de etapa.
+  const docsKey = events.filter((e) => e.event.type === 'tool_result' || e.event.type === 'note').length
+  useEffect(() => {
+    api<TicketDocs>(`/tickets/${ticketId}/docs`).then(setDocs, () => {})
+  }, [ticketId, ticket?.status, ticket?.stage, docsKey])
 
   useEffect(() => {
     api<Workspace[]>('/workspaces').then((all) => setWs(all.find((w) => w.id === id) ?? null))
@@ -66,10 +75,21 @@ export function Ticket() {
                 </Badge>
                 <span>criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
               </div>
+              <StageStepper ticket={ticket} docs={docs} />
             </div>
-            <Tabs defaultValue="log" className="flex min-h-0 flex-1 flex-col gap-3 px-8 py-5">
+            <Tabs
+              key={ticket.id}
+              defaultValue={ticket.stage === 'spec' || ticket.stage === 'plan' ? 'docs' : 'log'}
+              className="flex min-h-0 flex-1 flex-col gap-3 px-8 py-5"
+            >
               <div className="flex items-center gap-2.5">
                 <TabsList>
+                  {hasSdd(ticket, docs) && (
+                    <TabsTrigger value="docs" className="px-3">
+                      <FileText />
+                      Spec e plano
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="log" className="px-3">
                     <SquareTerminal />
                     Log
@@ -80,8 +100,11 @@ export function Ticket() {
                   </TabsTrigger>
                 </TabsList>
                 {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
-                {!isClosed(ticket) && <span className="ml-auto truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
+                {!isClosed(ticket) && <span className="ml-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
               </div>
+              <TabsContent value="docs" className="flex min-h-0 flex-col">
+                <DocsPanel ticket={ticket} docs={docs} onDocs={setDocs} />
+              </TabsContent>
               <TabsContent value="log" className="flex min-h-0 flex-col">
                 <LogPanel ticket={ticket} events={events} strip={strip} />
               </TabsContent>
@@ -204,6 +227,11 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
               open={ticket.status === 'waiting' && !replies.has(event.id)}
             />
           ) : null,
+        )}
+        {ticket.status === 'approval' && (
+          <p className="rounded-[12px] border border-amber-200 bg-amber-50/40 px-3.5 py-2.5 text-[13px]">
+            {ticket.stage === 'spec' ? 'A spec está pronta' : 'O plano está pronto'}. Aprove na aba Spec e plano ou peça ajustes por aqui.
+          </p>
         )}
         {ticket.status === 'running' && (
           <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
@@ -366,6 +394,7 @@ function Composer({ ticket }: { ticket: TicketT }) {
     <div className="flex flex-col gap-1.5">
       <div className="flex items-end gap-2 rounded-[14px] border border-[#e5e5e5] px-3 py-2 focus-within:border-neutral-400">
         <Textarea
+          id="composer"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

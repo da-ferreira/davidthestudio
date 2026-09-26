@@ -1,4 +1,5 @@
-import { query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import path from 'node:path'
+import { query, type HookCallback, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, Ask, Question, Reply } from '@studio/shared'
 
 const MAX_OUTPUT = 4000
@@ -9,6 +10,8 @@ type StartOptions = {
   model: string
   instructions: string
   resume?: string | null
+  // Se definido, edições de arquivo fora desta pasta são recusadas.
+  writableDir?: string
   onEvent: (e: AgentEvent) => void
   // Pergunta ou pedido de permissão: o agente fica parado até a promessa resolver.
   onAsk: (id: string, ask: Ask, signal: AbortSignal) => Promise<Reply>
@@ -53,6 +56,7 @@ export function start(o: StartOptions): Session {
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
       permissionMode: 'acceptEdits',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },
+      hooks: o.writableDir ? { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [onlyInside(o.cwd, o.writableDir)] }] } : undefined,
       canUseTool: async (tool, toolInput, { signal, toolUseID }) => {
         const ask: Ask =
           tool === 'AskUserQuestion'
@@ -87,6 +91,23 @@ export function start(o: StartOptions): Session {
       setTimeout(() => q.close(), 5000).unref()
     },
     done,
+  }
+}
+
+// Hook e não canUseTool: no modo acceptEdits as edições na pasta passam sem consultar o canUseTool.
+function onlyInside(cwd: string, dir: string): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== 'PreToolUse') return {}
+    const ti = input.tool_input as { file_path?: string; notebook_path?: string }
+    const file = path.resolve(cwd, ti.file_path ?? ti.notebook_path ?? '')
+    if (file.startsWith(path.resolve(dir) + path.sep)) return {}
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `Nesta etapa só é permitido editar arquivos em ${dir}. O código muda só depois do plano aprovado.`,
+      },
+    }
   }
 }
 

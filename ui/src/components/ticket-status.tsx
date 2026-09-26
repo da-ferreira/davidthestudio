@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 const STATUS: Record<TicketStatus, { label: string; className: string }> = {
   running: { label: 'Rodando', className: 'bg-blue-50 text-blue-700' },
   waiting: { label: 'Aguardando você', className: 'bg-amber-50 text-amber-700' },
+  approval: { label: 'Aguardando aprovação', className: 'bg-amber-50 text-amber-700' },
   done: { label: 'Concluído', className: 'bg-green-50 text-green-700' },
   error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
   interrupted: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },

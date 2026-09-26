@@ -6,12 +6,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Topbar } from '@/components/topbar'
 import { TicketStatusBadge, modelLabel } from '@/components/ticket-status'
+import { stageLabel } from '@/components/stages'
 import { api } from '@/lib/api'
 
 const FILTERS: { id: string; label: string; statuses: TicketStatus[] | null }[] = [
   { id: 'todos', label: 'Todos', statuses: null },
   { id: 'andamento', label: 'Em andamento', statuses: ['running', 'waiting'] },
-  { id: 'revisar', label: 'Para revisar', statuses: ['done', 'error', 'interrupted'] },
+  { id: 'revisar', label: 'Para revisar', statuses: ['approval', 'done', 'error', 'interrupted'] },
   { id: 'encerrados', label: 'Encerrados', statuses: ['closed', 'discarded'] },
 ]
 
@@ -67,6 +68,7 @@ export function Tickets() {
                   <TableHead>Repositórios</TableHead>
                   <TableHead>Modelo</TableHead>
                   <TableHead className="text-right">PRs</TableHead>
+                  <TableHead>Etapa</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Criado</TableHead>
                 </TableRow>
@@ -81,6 +83,7 @@ export function Tickets() {
                     <TableCell className="text-muted-foreground">{t.repos.join(', ')}</TableCell>
                     <TableCell className="text-muted-foreground">{modelLabel(t.model)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">{stageLabel(t.stage)}</TableCell>
                     <TableCell>
                       <TicketStatusBadge status={t.status} />
                     </TableCell>

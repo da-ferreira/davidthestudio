@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
-import type { ApiError, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
+import type { ApiError, DocStage, Health, NewTicket, Reply, WsMessage } from '@studio/shared'
 import { HttpError } from './http-error.ts'
 import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
@@ -63,6 +63,15 @@ app.post<{ Params: { id: string }; Body: { text: string } }>('/api/tickets/:id/m
 })
 app.post<{ Params: { id: string } }>('/api/tickets/:id/stop', async (req) => {
   await tickets.stopTicket(req.params.id)
+  return tickets.getTicket(req.params.id)
+})
+app.get<{ Params: { id: string } }>('/api/tickets/:id/docs', async (req) => tickets.getDocs(req.params.id))
+app.put<{ Params: { id: string; stage: DocStage }; Body: { content: string } }>('/api/tickets/:id/docs/:stage', async (req) => {
+  tickets.editDoc(req.params.id, req.params.stage, req.body.content)
+  return tickets.getDocs(req.params.id)
+})
+app.post<{ Params: { id: string }; Body: { stage: DocStage } }>('/api/tickets/:id/approve', async (req) => {
+  tickets.approveDoc(req.params.id, req.body.stage)
   return tickets.getTicket(req.params.id)
 })
 app.get<{ Params: { id: string } }>('/api/tickets/:id/diff', async (req) => tickets.getDiff(req.params.id))

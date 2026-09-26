@@ -16,9 +16,24 @@ const components: Components = {
       {children}
     </a>
   ),
-  ul: ({ children }) => <ul className="flex list-disc flex-col gap-1 pl-5 marker:text-neutral-400">{children}</ul>,
+  // remark-gfm marca checklists (- [ ]) com essas classes; sem bolinha, só a caixa.
+  ul: ({ className, children }) => (
+    <ul className={cn('flex flex-col gap-1', className === 'contains-task-list' ? 'pl-0.5' : 'list-disc pl-5 marker:text-neutral-400')}>{children}</ul>
+  ),
   ol: ({ children }) => <ol className="flex list-decimal flex-col gap-1 pl-5 marker:text-neutral-400">{children}</ol>,
-  li: ({ children }) => <li className="pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1">{children}</li>,
+  li: ({ className, children }) => (
+    <li className={cn('pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1', className === 'task-list-item' && 'list-none')}>{children}</li>
+  ),
+  input: ({ checked }) => (
+    <span
+      className={cn(
+        'mr-2 inline-flex size-[15px] translate-y-[2px] items-center justify-center rounded-[4px] border',
+        checked ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-300',
+      )}
+    >
+      {checked && <Check className="size-2.5" strokeWidth={3} />}
+    </span>
+  ),
   blockquote: ({ children }) => <blockquote className="border-l-2 border-[#e5e5e5] pl-3 text-muted-foreground">{children}</blockquote>,
   hr: () => <hr className="border-[#efefef]" />,
   code: ({ children }) => (

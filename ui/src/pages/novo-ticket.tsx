@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, GitBranch } from 'lucide-react'
-import type { Ticket, WorkspaceDetail } from '@studio/shared'
+import type { DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -19,6 +21,8 @@ export function NovoTicket() {
   const [description, setDescription] = useState('')
   const [repos, setRepos] = useState<string[]>([])
   const [model, setModel] = useState('opus')
+  const [sdd, setSdd] = useState(true)
+  const [gates, setGates] = useState<DocStage[]>(['spec', 'plan'])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -36,7 +40,7 @@ export function NovoTicket() {
     setBusy(true)
     setError(null)
     try {
-      const t = await api<Ticket>(`/workspaces/${id}/tickets`, { method: 'POST', body: { title, description, repos, model } })
+      const t = await api<Ticket>(`/workspaces/${id}/tickets`, { method: 'POST', body: { title, description, repos, model, sdd, gates } })
       navigate(`/w/${id}/tickets/${t.id}`)
     } catch (err) {
       setError((err as Error).message)
@@ -109,6 +113,34 @@ export function NovoTicket() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Label>Etapas</Label>
+            <label className="flex items-start justify-between gap-3">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[14px]">Spec e plano antes de codar</span>
+                <span className="text-[13px] text-muted-foreground">
+                  {sdd ? 'O agente escreve a spec e o plano antes de mexer no código.' : 'Ticket rápido: o agente começa direto na implementação.'}
+                </span>
+              </span>
+              <Switch checked={sdd} onCheckedChange={setSdd} />
+            </label>
+            {sdd && (
+              <div className="flex flex-col gap-2">
+                <span className="text-[13px] text-muted-foreground">Parar para eu aprovar</span>
+                <div className="flex gap-5">
+                  {(['spec', 'plan'] as const).map((st) => (
+                    <label key={st} className="flex items-center gap-2 text-[14px]">
+                      <Checkbox
+                        checked={gates.includes(st)}
+                        onCheckedChange={(on) => setGates((g) => (on ? [...g, st] : g.filter((x) => x !== st)))}
+                      />
+                      {st === 'spec' ? 'Spec' : 'Plano'}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {error && <p className="text-[13px] text-destructive">{error}</p>}
           <div className="mt-auto flex gap-2">
