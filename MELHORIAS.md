@@ -4,7 +4,6 @@ Ideias que ficaram de fora do escopo de cada etapa. Nada aqui está combinado; a
 
 ## Tickets
 
-- **Visão em quadro** (colunas por status), além da lista.
 - **Colunas de duração e última atualização** na lista.
 - **Atualizar um ticket aberto com a base.** O ticket parte do origin atualizado na criação, mas não acompanha o que entra na base depois. Um botão "Atualizar com a base" faria rebase/merge da branch do ticket no `origin/<base>`.
 
