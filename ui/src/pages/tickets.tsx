@@ -19,6 +19,8 @@ const FILTERS: { id: string; label: string; statuses: TicketStatus[] | null }[] 
   { id: 'encerrados', label: 'Encerrados', statuses: ['closed', 'discarded'] },
 ]
 
+const COLUMNS = FILTERS.flatMap((f) => (f.statuses ? [{ ...f, statuses: f.statuses }] : []))
+
 // Sem acento e sem caixa: "migracao" encontra "Migração".
 const norm = (s: string) =>
   s
@@ -41,6 +43,9 @@ export function Tickets() {
   const count = (f: (typeof FILTERS)[number]) =>
     items?.filter((t) => (!f.statuses || f.statuses.includes(t.status)) && matches(t)).length ?? 0
   const shown = items?.filter((t) => (!filter.statuses || filter.statuses.includes(t.status)) && matches(t))
+  // No quadro as colunas já são os grupos das abas, então só a busca filtra.
+  const board = params.get('view') === 'quadro'
+  const found = items?.filter(matches)
 
   // Muda só uma chave para a aba e a busca não se apagarem uma à outra.
   const setParam = (key: string, value: string) =>
@@ -78,7 +83,17 @@ export function Tickets() {
     <>
       <Topbar crumbs={[ws?.name ?? '…', 'Tickets']} actions={novo} />
       <div className="flex flex-1 flex-col gap-8 px-8 py-7">
-        <h1 className="text-[28px] font-medium tracking-[-0.025em]">Tickets</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-[28px] font-medium tracking-[-0.025em]">Tickets</h1>
+          {!!items?.length && (
+            <Tabs className="ml-auto" value={board ? 'quadro' : 'lista'} onValueChange={(v) => setParam('view', v === 'quadro' ? v : '')}>
+              <TabsList>
+                <TabsTrigger value="lista">Lista</TabsTrigger>
+                <TabsTrigger value="quadro">Quadro</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
         {items?.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed py-16 text-center">
             <div className="font-medium">Nenhum ticket ainda</div>
@@ -107,22 +122,48 @@ export function Tickets() {
                 /
               </kbd>
             </div>
-            <Tabs value={filter.id} onValueChange={(v) => setParam('status', v === 'todos' ? '' : v)}>
-              <TabsList>
-                {FILTERS.map((f) => (
-                  <TabsTrigger key={f.id} value={f.id}>
-                    {f.label}
-                    <span className="text-muted-foreground">{count(f)}</span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            {!board && (
+              <Tabs value={filter.id} onValueChange={(v) => setParam('status', v === 'todos' ? '' : v)}>
+                <TabsList>
+                  {FILTERS.map((f) => (
+                    <TabsTrigger key={f.id} value={f.id}>
+                      {f.label}
+                      <span className="text-muted-foreground">{count(f)}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            )}
           </div>
         )}
-        {!!items?.length && shown?.length === 0 && (
+        {!board && !!items?.length && shown?.length === 0 && (
           <p className="text-muted-foreground">{term ? `Nenhum ticket encontrado para "${q.trim()}".` : 'Nenhum ticket neste filtro.'}</p>
         )}
-        {!!shown?.length && (
+        {board && !!items?.length && found?.length === 0 && (
+          <p className="text-muted-foreground">Nenhum ticket encontrado para "{q.trim()}".</p>
+        )}
+        {board && !!found?.length && (
+          <div className="overflow-x-auto">
+            <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-4">
+              {COLUMNS.map((c) => {
+                const cards = found.filter((t) => c.statuses.includes(t.status))
+                return (
+                  <div key={c.id} className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 px-1 pb-1 font-medium">
+                      {c.label}
+                      <span className="text-muted-foreground">{cards.length}</span>
+                    </div>
+                    {cards.map((t) => (
+                      <TicketCard key={t.id} ticket={t} workspaceId={id!} />
+                    ))}
+                    {cards.length === 0 && <p className="px-1 text-muted-foreground">Nenhum ticket</p>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        {!board && !!shown?.length && (
           <div className="rounded-xl border">
             <Table>
               <TableHeader>
@@ -166,6 +207,28 @@ export function Tickets() {
         )}
       </div>
     </>
+  )
+}
+
+function TicketCard({ ticket: t, workspaceId }: { ticket: Ticket; workspaceId: string }) {
+  const navigate = useNavigate()
+  const href = `/w/${workspaceId}/tickets/${t.id}`
+  return (
+    <div className="flex cursor-pointer flex-col gap-2 rounded-xl border bg-background p-3" onClick={() => navigate(href)}>
+      <Link to={href} className="self-start font-mono text-[12px] text-muted-foreground">
+        {t.id}
+      </Link>
+      <div className="line-clamp-2 font-medium">{t.title}</div>
+      <div className="flex items-center gap-2">
+        <TicketStatusBadge status={t.status} />
+        <span className="text-muted-foreground">{stageLabel(t.stage)}</span>
+      </div>
+      <div className="flex min-w-0 flex-col gap-0.5 text-[13px] text-muted-foreground">
+        <Truncated text={t.pickRepos ? 'o agente escolhe' : t.repos.join(', ')} />
+        <Truncated text={agentLabel(t)} />
+        <span>{t.author ?? '—'}</span>
+      </div>
+    </div>
   )
 }
 
