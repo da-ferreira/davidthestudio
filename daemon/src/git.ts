@@ -59,8 +59,19 @@ export async function stashCount(cwd: string): Promise<number> {
   return out ? out.split('\n').length : 0
 }
 
-export async function clone(url: string, parent: string, name: string, extraEnv: Record<string, string> = {}) {
-  await exec('git', ['clone', url, name], { cwd: parent, env: { ...env, ...extraEnv }, maxBuffer: 64 * 1024 * 1024 })
+export async function clone(url: string, parent: string, name: string, extraEnv: Record<string, string> = {}, branch?: string) {
+  const args = ['clone', ...(branch ? [`--branch=${branch}`] : []), '--', url, name]
+  await exec('git', args, { cwd: parent, env: { ...env, ...extraEnv }, maxBuffer: 64 * 1024 * 1024 })
+}
+
+// Locais e do origin, sem o prefixo origin/.
+export async function branches(cwd: string): Promise<string[]> {
+  const out = await git(cwd, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes/origin'])
+  const names = out
+    .split('\n')
+    .filter((r) => r && r !== 'refs/remotes/origin/HEAD')
+    .map((r) => r.replace(/^refs\/(heads|remotes\/origin)\//, ''))
+  return [...new Set(names)].sort()
 }
 
 export async function addWorktree(repo: string, dir: string, branch: string, base: string) {

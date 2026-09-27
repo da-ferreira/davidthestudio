@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
@@ -163,6 +165,7 @@ function AddRepoSheet({
   onDone: (ws: WorkspaceDetail) => void
 }) {
   const [url, setUrl] = useState('')
+  const [branch, setBranch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -171,8 +174,9 @@ function AddRepoSheet({
     setBusy(true)
     setError(null)
     try {
-      onDone(await api<WorkspaceDetail>(`/workspaces/${wsId}/repos`, { method: 'POST', body: { url } }))
+      onDone(await api<WorkspaceDetail>(`/workspaces/${wsId}/repos`, { method: 'POST', body: { url, branch: branch.trim() || undefined } }))
       setUrl('')
+      setBranch('')
       onOpenChange(false)
     } catch (err) {
       setError((err as Error).message)
@@ -199,6 +203,19 @@ function AddRepoSheet({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
+            <Label htmlFor="repo-branch" className="mt-4">
+              Branch
+            </Label>
+            <Input
+              id="repo-branch"
+              placeholder="padrão do repositório"
+              className="font-mono text-[13px]"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+            />
+            <span className="text-[12.5px] text-muted-foreground">
+              O clone vem desta branch, e os tickets saem dela e abrem PR para ela. Vazio: a branch padrão do remote.
+            </span>
             {error && <pre className="whitespace-pre-wrap text-[12px] text-destructive">{error}</pre>}
           </div>
           <SheetFooter>
@@ -261,9 +278,10 @@ function RepoConfigSheet({
         <form onSubmit={submit} className="flex h-full flex-col">
           <SheetHeader>
             <SheetTitle>{repo?.name}</SheetTitle>
-            <SheetDescription>Como os testes deste repositório rodam nos tickets.</SheetDescription>
+            <SheetDescription>Branch base e como os testes deste repositório rodam nos tickets.</SheetDescription>
           </SheetHeader>
           <div className="flex flex-1 flex-col gap-6 overflow-auto px-4">
+            {repo && <BranchSection key={repo.name} repo={repo} wsId={wsId} onDone={onDone} />}
             <div className="flex flex-col gap-2">
               <Label htmlFor="repo-test">Comando de teste</Label>
               <Input
@@ -302,6 +320,95 @@ function RepoConfigSheet({
         </form>
       </SheetContent>
     </Sheet>
+  )
+}
+
+// Troca a branch na hora, fora do Salvar do painel: pode subir branch nova para o remote.
+function BranchSection({ repo, wsId, onDone }: { repo: RepoStatus; wsId: string; onDone: (ws: WorkspaceDetail) => void }) {
+  const base = `/workspaces/${wsId}/repos/${encodeURIComponent(repo.name)}`
+  const [current, setCurrent] = useState(repo.defaultBranch)
+  const [mode, setMode] = useState<'existing' | 'new'>('existing')
+  const [branches, setBranches] = useState<string[] | null>(null)
+  const [picked, setPicked] = useState('')
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api<string[]>(`${base}/branches`)
+      .then(setBranches)
+      .catch((e) => setError([e.message]))
+  }, [base])
+
+  async function apply() {
+    const branch = mode === 'new' ? name.trim() : picked
+    setBusy(true)
+    setError(null)
+    try {
+      onDone(await api<WorkspaceDetail>(`${base}/branch`, { method: 'PUT', body: { branch, create: mode === 'new' } }))
+      setCurrent(branch)
+      setBranches((b) => (b && !b.includes(branch) ? [...b, branch].sort() : b))
+      setPicked('')
+      setName('')
+    } catch (err) {
+      setError(err instanceof ApiError && err.reasons.length ? [err.message, ...err.reasons] : [(err as Error).message])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const ready = mode === 'new' ? !!name.trim() : !!picked && picked !== current
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>Branch base</Label>
+      <span className="text-[13px]">
+        Atual: <span className="font-mono text-[12.5px]">{current}</span>
+      </span>
+      <Tabs value={mode} onValueChange={(v) => setMode(v as 'existing' | 'new')}>
+        <TabsList>
+          <TabsTrigger value="existing">Trocar para existente</TabsTrigger>
+          <TabsTrigger value="new">Criar nova</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div className="flex gap-2">
+        {mode === 'existing' ? (
+          <Select value={picked} onValueChange={setPicked} disabled={!branches}>
+            <SelectTrigger className="w-full font-mono text-[13px]">
+              <SelectValue placeholder={branches ? 'Escolha a branch' : 'Buscando branches…'} />
+            </SelectTrigger>
+            <SelectContent>
+              {branches?.map((b) => (
+                <SelectItem key={b} value={b} className="font-mono text-[13px]">
+                  {b}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            placeholder={`nova branch a partir de ${current}`}
+            className="font-mono text-[13px]"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        )}
+        <Button type="button" variant="outline" disabled={!ready || busy} onClick={apply}>
+          {busy ? 'Trocando…' : mode === 'new' ? 'Criar' : 'Trocar'}
+        </Button>
+      </div>
+      <span className="text-[12.5px] text-muted-foreground">
+        Tickets e conversas novos saem desta branch e os PRs apontam para ela.
+        {mode === 'new' && repo.remote && ' A branch nova é criada a partir da atual e enviada ao remote com o seu GitHub.'}
+      </span>
+      {error && (
+        <ul className="text-[13px] text-destructive">
+          {error.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

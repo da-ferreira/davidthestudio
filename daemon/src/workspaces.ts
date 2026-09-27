@@ -36,10 +36,11 @@ function manifestOf(row: Row): Manifest {
   return readManifest(row.path) ?? { name: row.name, repos: [] }
 }
 
-// Atualiza remote e branch; o comando de teste só é sugerido se nunca foi definido.
-async function describeRepo(dir: string, prev: ManifestRepo | { name: string }): Promise<ManifestRepo> {
-  const test = 'test' in prev && prev.test !== undefined ? prev.test : suggestTest(dir)
-  return { ...prev, remote: await g.remoteUrl(dir), defaultBranch: await g.defaultBranch(dir), test }
+// Atualiza o remote. A branch base e o comando de teste só são preenchidos se nunca foram
+// definidos: a base pode ter sido escolhida no clone ou trocada pela tela.
+async function describeRepo(dir: string, prev: Partial<ManifestRepo> & { name: string }): Promise<ManifestRepo> {
+  const test = prev.test !== undefined ? prev.test : suggestTest(dir)
+  return { ...prev, remote: await g.remoteUrl(dir), defaultBranch: prev.defaultBranch || (await g.defaultBranch(dir)), test }
 }
 
 function uniqueId(name: string): string {
@@ -74,8 +75,19 @@ export async function registerWorkspace(input: string): Promise<Workspace> {
   return { ...ws, repoCount: manifest.repos.length }
 }
 
-// Pasta de destino dos workspaces importados por URL; os registrados por caminho ficam onde estão.
+// Pasta de destino dos workspaces importados por URL ou criados vazios; os registrados por caminho ficam onde estão.
 const IMPORT_DIR = path.join(DATA_DIR, 'workspaces')
+
+export async function createEmptyWorkspace(input: string): Promise<Workspace> {
+  const name = input.trim()
+  const folder = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '')
+  if (!folder) throw new HttpError(400, 'Dê um nome ao workspace')
+  const dir = path.join(IMPORT_DIR, folder)
+  if (fs.existsSync(dir)) throw new HttpError(409, `Já existe a pasta ${dir}`)
+  fs.mkdirSync(dir, { recursive: true })
+  writeManifest(dir, { name, repos: [] })
+  return registerWorkspace(dir)
+}
 
 function nameFromUrl(url: string): string {
   const name = url.trim().replace(/\/+$/, '').split(/[/:]/).pop()?.replace(/\.git$/, '')
@@ -83,9 +95,9 @@ function nameFromUrl(url: string): string {
   return name
 }
 
-async function cloneInto(url: string, parent: string, name: string, env: Record<string, string>) {
+async function cloneInto(url: string, parent: string, name: string, env: Record<string, string>, branch?: string) {
   try {
-    await g.clone(url.trim(), parent, name, env)
+    await g.clone(url.trim(), parent, name, env, branch)
   } catch (err) {
     fs.rmSync(path.join(parent, name), { recursive: true, force: true })
     throw new HttpError(400, (err as { stderr?: string }).stderr?.trim() || 'Falha no git clone')
@@ -111,7 +123,7 @@ export async function importWorkspace(url: string, user: User): Promise<ImportRe
         continue
       }
       try {
-        await cloneInto(r.remote, dir, r.name, env)
+        await cloneInto(r.remote, dir, r.name, env, r.defaultBranch)
       } catch (err) {
         failed.push({ name: r.name, error: (err as Error).message })
       }
@@ -131,7 +143,7 @@ export async function cloneMissingRepo(id: string, name: string, user: User) {
   if (!repo) throw new HttpError(404, 'Repositório não encontrado')
   if (fs.existsSync(path.join(row.path, name))) throw new HttpError(409, `A pasta ${name} já existe no workspace`)
   if (!repo.remote) throw new HttpError(400, 'O repositório não tem remote no workspace.json')
-  await cloneInto(repo.remote, row.path, name, gitEnv(user))
+  await cloneInto(repo.remote, row.path, name, gitEnv(user), repo.defaultBranch)
   manifest.repos[i] = await describeRepo(path.join(row.path, name), repo)
   writeManifest(row.path, manifest)
 }
@@ -213,15 +225,74 @@ async function repoStatus(id: string, root: string, repo: ManifestRepo): Promise
   return { ...repo, present: true, branch, changes, unpushed, hasEnv: !!storedEnv(id, repo.name, dir) }
 }
 
-export async function addRepo(id: string, url: string, user: User): Promise<void> {
+export async function addRepo(id: string, url: string, branch: string | undefined, user: User): Promise<void> {
   const row = getRow(id)
   const name = nameFromUrl(url)
   const manifest = manifestOf(row)
   if (manifest.repos.some((r) => r.name === name) || fs.existsSync(path.join(row.path, name))) {
     throw new HttpError(409, `Já existe "${name}" neste workspace`)
   }
-  await cloneInto(url, row.path, name, gitEnv(user))
-  manifest.repos.push(await describeRepo(path.join(row.path, name), { name }))
+  const base = branch?.trim() || undefined
+  await cloneInto(url, row.path, name, gitEnv(user), base)
+  manifest.repos.push(await describeRepo(path.join(row.path, name), { name, defaultBranch: base }))
+  writeManifest(row.path, manifest)
+}
+
+export async function repoBranches(id: string, name: string, user: User): Promise<string[]> {
+  const { repo, dir } = presentRepo(id, name)
+  if (repo.remote) await fetchOrigin(dir, user)
+  return g.branches(dir)
+}
+
+async function fetchOrigin(dir: string, user: User) {
+  try {
+    await g.git(dir, ['fetch', '--prune', 'origin'], gitEnv(user))
+  } catch (err) {
+    throw new HttpError(400, (err as { stderr?: string }).stderr?.trim() || 'Falha no git fetch')
+  }
+}
+
+// Troca a branch base do repo: tickets e conversas novos saem dela e os PRs apontam para ela.
+// Com create, cria a branch a partir da atual e sobe para o origin, para o PR ter onde apontar.
+export async function switchBranch(id: string, name: string, input: string, create: boolean, user: User): Promise<void> {
+  const { row, manifest, repo, dir } = presentRepo(id, name)
+  const branch = input.trim()
+  if (!branch || branch.startsWith('-')) throw new HttpError(400, 'Nome de branch inválido')
+  await g.git(dir, ['check-ref-format', '--branch', branch]).catch(() => {
+    throw new HttpError(400, `Nome de branch inválido: ${branch}`)
+  })
+  // Ticket aberto compara o diff e abre o PR contra a base; trocar no meio bagunçaria os dois.
+  const tickets = ticketsUsingRepo(id, name)
+  if (tickets.length) throw new HttpError(409, 'Há tickets usando este repositório', tickets.map((t) => `${t} ainda tem worktree; encerre ou descarte antes`))
+  const changes = await g.changedFiles(dir)
+  if (changes) throw new HttpError(409, `O repositório tem ${changes} arquivo(s) com mudanças não commitadas`)
+  if (repo.remote) await fetchOrigin(dir, user)
+
+  const known = await g.branches(dir)
+  if (create) {
+    if (known.includes(branch)) throw new HttpError(409, `A branch ${branch} já existe`)
+    const previous = await g.currentBranch(dir)
+    await g.git(dir, ['checkout', '-q', '-b', branch])
+    if (repo.remote) {
+      try {
+        await g.git(dir, ['push', '-q', '-u', 'origin', branch], gitEnv(user))
+      } catch (err) {
+        if (previous) await g.git(dir, ['checkout', '-q', previous])
+        await g.git(dir, ['branch', '-D', branch]).catch(() => {})
+        throw new HttpError(400, (err as { stderr?: string }).stderr?.trim() || 'Falha no git push')
+      }
+    }
+  } else {
+    if (!known.includes(branch)) throw new HttpError(404, `A branch ${branch} não existe`)
+    try {
+      await g.git(dir, ['checkout', '-q', branch])
+      const upstream = await g.git(dir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`]).catch(() => null)
+      if (upstream) await g.git(dir, ['merge', '-q', '--ff-only', `origin/${branch}`])
+    } catch (err) {
+      throw new HttpError(400, (err as { stderr?: string }).stderr?.trim() || 'Falha ao trocar de branch')
+    }
+  }
+  repo.defaultBranch = branch
   writeManifest(row.path, manifest)
 }
 

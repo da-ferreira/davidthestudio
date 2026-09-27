@@ -8,3 +8,7 @@ Ideias que ficaram de fora do escopo de cada etapa. Nada aqui está combinado; a
 - **Busca na lista de tickets** por título ou ID, como no mockup.
 - **Visão em quadro** (colunas por status), além da lista.
 - **Colunas de duração e última atualização** na lista.
+
+## Conexões
+
+- **Entrar com GitHub (OAuth)** no lugar de colar token. A pessoa autoriza no GitHub e volta, sem copiar token nem renovar validade. Exige registrar um app OAuth por instalação (URL de retorno no domínio, client secret no servidor); só faz sentido com domínio e HTTPS.

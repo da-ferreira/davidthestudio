@@ -30,6 +30,7 @@ export function Workspaces() {
   const [items, setItems] = useState<Workspace[] | null>(null)
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [removing, setRemoving] = useState<Workspace | null>(null)
 
   const load = () => api<Workspace[]>('/workspaces').then(setItems).catch(() => setItems([]))
@@ -47,6 +48,9 @@ export function Workspaces() {
               <Button variant="outline" onClick={() => setOpen(true)}>
                 Registrar pasta
               </Button>
+              <Button variant="outline" onClick={() => setCreating(true)}>
+                Workspace vazio
+              </Button>
               <Button onClick={() => setImporting(true)}>Importar do git</Button>
             </div>
           ) : null
@@ -62,11 +66,14 @@ export function Workspaces() {
             <div className="font-medium">Nenhum workspace ainda</div>
             <p className="max-w-sm text-muted-foreground">
               Registre uma pasta com seus repositórios e contexto, como{' '}
-              <span className="font-mono text-[13px]">~/lp/agentia</span>, ou importe o repositório de contexto pela URL do git.
+              <span className="font-mono text-[13px]">~/lp/agentia</span>, importe o repositório de contexto pela URL do git ou comece vazio e adicione os repositórios depois.
             </p>
             <div className="mt-2 flex gap-2">
               <Button variant="outline" onClick={() => setOpen(true)}>
                 Registrar pasta
+              </Button>
+              <Button variant="outline" onClick={() => setCreating(true)}>
+                Workspace vazio
               </Button>
               <Button onClick={() => setImporting(true)}>Importar do git</Button>
             </div>
@@ -110,6 +117,7 @@ export function Workspaces() {
       </div>
       <RegisterDialog open={open} onOpenChange={setOpen} onDone={load} />
       <ImportDialog open={importing} onOpenChange={setImporting} onDone={load} />
+      <EmptyDialog open={creating} onOpenChange={setCreating} />
       <RemoveWorkspaceDialog ws={removing} onClose={() => setRemoving(null)} onDone={setItems} />
     </>
   )
@@ -161,6 +169,50 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
           <DialogFooter>
             <Button type="submit" disabled={!path.trim() || busy}>
               {busy ? 'Registrando…' : 'Registrar'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EmptyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const ws = await api<Workspace>('/workspaces/empty', { method: 'POST', body: { name } })
+      navigate(`/w/${ws.id}/repos`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); setError(null); setName('') }}>
+      <DialogContent>
+        <form onSubmit={submit} className="flex flex-col gap-5">
+          <DialogHeader>
+            <DialogTitle>Workspace vazio</DialogTitle>
+            <DialogDescription>Cria o workspace sem repositórios. Depois é só adicionar cada um pela URL do git.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="ws-name">Nome</Label>
+            <Input id="ws-name" autoFocus placeholder="agentia" value={name} onChange={(e) => setName(e.target.value)} />
+            {error && <p className="text-[13px] text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={!name.trim() || busy}>
+              {busy ? 'Criando…' : 'Criar'}
             </Button>
           </DialogFooter>
         </form>
