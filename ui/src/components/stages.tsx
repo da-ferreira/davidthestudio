@@ -36,14 +36,14 @@ export function StageStepper({ ticket, docs }: { ticket: Ticket; docs: TicketDoc
         const now = i === current
         return (
           <Fragment key={s.id}>
-            {i > 0 && <span className={cn('h-px w-6', done || now ? 'bg-neutral-400' : 'bg-[#e5e5e5]')} />}
+            {i > 0 && <span className={cn('h-px w-6', done || now ? 'bg-faint' : 'bg-border')} />}
             <span className={cn('flex items-center gap-1.5', done || now ? 'text-foreground' : 'text-muted-foreground')}>
               <span
                 className={cn(
                   'flex size-[18px] items-center justify-center rounded-full border text-[11px]',
-                  done && 'border-neutral-900 bg-neutral-900 text-white',
-                  now && 'border-neutral-900 font-medium',
-                  !done && !now && 'border-[#e5e5e5]',
+                  done && 'border-primary bg-primary text-primary-foreground',
+                  now && 'border-primary font-medium',
+                  !done && !now && 'border-border',
                 )}
               >
                 {done ? <Check className="size-3" strokeWidth={2.6} /> : i + 1}

@@ -28,7 +28,7 @@ function useAct(load: () => Promise<unknown>) {
 
 function Section({ title, badge, action, children }: { title: string; badge: ReactNode; action?: ReactNode; children?: ReactNode }) {
   return (
-    <section className="flex max-w-[720px] flex-col gap-4 rounded-[14px] border border-[#efefef] px-5 py-4">
+    <section className="flex max-w-[720px] flex-col gap-4 rounded-[14px] border border-line px-5 py-4">
       <div className="flex items-center gap-3">
         <span className="font-medium">{title}</span>
         {badge}
@@ -39,8 +39,8 @@ function Section({ title, badge, action, children }: { title: string; badge: Rea
   )
 }
 
-const Connected = ({ text }: { text: string }) => <Badge className="bg-green-50 text-green-700">{text}</Badge>
-const Disconnected = () => <Badge className="bg-neutral-100 text-neutral-600">Não conectado</Badge>
+const Connected = ({ text }: { text: string }) => <Badge className="bg-success-soft text-success">{text}</Badge>
+const Disconnected = () => <Badge className="bg-muted text-subtle">Não conectado</Badge>
 const ErrorText = ({ text }: { text: string | null }) => text && <span className="text-[13px] text-destructive">{text}</span>
 
 function SecretForm({ hint, placeholder, button, busy, onSave }: { hint: string; placeholder: string; button: string; busy: boolean; onSave: (v: string) => Promise<unknown> }) {
@@ -125,7 +125,7 @@ function AgentCard({ agent, status, load }: { agent: AgentKind; status: AgentSta
               <span className="text-[13px] text-muted-foreground">Usa a sua assinatura.</span>
             </div>
           )}
-          <div className="border-t border-[#efefef] pt-4">
+          <div className="border-t border-line pt-4">
             <SecretForm
               hint={agent === 'codex' ? 'Ou use uma chave de API da OpenAI.' : 'Ou use uma chave de API da Anthropic.'}
               placeholder={agent === 'codex' ? 'sk-…' : 'sk-ant-…'}

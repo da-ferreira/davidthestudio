@@ -5,7 +5,7 @@
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 
-/* A interface é só clara: dark: do shadcn só vale com .dark, não com o modo escuro do sistema. */
+/* O tema é escolhido no menu ao lado do usuário (claro, escuro ou sistema) e aplicado com .dark no <html>. */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -43,6 +43,22 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
+    --color-line: var(--line);
+    --color-line-strong: var(--line-strong);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --color-body: var(--body);
+    --color-subtle: var(--subtle);
+    --color-faint: var(--faint);
+    --color-info: var(--info);
+    --color-info-soft: var(--info-soft);
+    --color-success: var(--success);
+    --color-success-soft: var(--success-soft);
+    --color-warning: var(--warning);
+    --color-warning-soft: var(--warning-soft);
+    --color-warning-line: var(--warning-line);
+    --color-danger: var(--danger);
+    --color-danger-soft: var(--danger-soft);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -85,6 +101,74 @@
     --sidebar-accent-foreground: #0a0a0a;
     --sidebar-border: #f0f0f0;
     --sidebar-ring: #a3a3a3;
+    --line: #efefef;
+    --line-strong: #d4d4d4;
+    --surface: #fafafa;
+    --surface-2: #f7f7f7;
+    --body: #262626;
+    --subtle: #525252;
+    --faint: #a3a3a3;
+    --info: #1d4ed8;
+    --info-soft: #eff6ff;
+    --success: #15803d;
+    --success-soft: #f0fdf4;
+    --warning: #b45309;
+    --warning-soft: #fffbeb;
+    --warning-line: #fde68a;
+    --danger: #b91c1c;
+    --danger-soft: #fef2f2;
+}
+
+/* Mesma hierarquia do claro: fundo quase preto, superfícies um degrau acima, bordas discretas. */
+.dark {
+    color-scheme: dark;
+    --background: #0b0b0b;
+    --foreground: #ededed;
+    --card: #111111;
+    --card-foreground: #ededed;
+    --popover: #141414;
+    --popover-foreground: #ededed;
+    --primary: #ededed;
+    --primary-foreground: #0b0b0b;
+    --secondary: #1c1c1c;
+    --secondary-foreground: #ededed;
+    --muted: #1a1a1a;
+    --muted-foreground: #9a9a9a;
+    --accent: #1f1f1f;
+    --accent-foreground: #ededed;
+    --destructive: #f87171;
+    --border: #262626;
+    --input: #2e2e2e;
+    --ring: #5c5c5c;
+    --chart-1: #262626;
+    --chart-2: #404040;
+    --chart-3: #737373;
+    --chart-4: #a3a3a3;
+    --chart-5: #ededed;
+    --sidebar: #0e0e0e;
+    --sidebar-foreground: #c4c4c4;
+    --sidebar-primary: #ededed;
+    --sidebar-primary-foreground: #0b0b0b;
+    --sidebar-accent: #1c1c1c;
+    --sidebar-accent-foreground: #ededed;
+    --sidebar-border: #1a1a1a;
+    --sidebar-ring: #5c5c5c;
+    --line: #1e1e1e;
+    --line-strong: #3a3a3a;
+    --surface: #111111;
+    --surface-2: #161616;
+    --body: #d6d6d6;
+    --subtle: #b5b5b5;
+    --faint: #6b6b6b;
+    --info: #7ab4ff;
+    --info-soft: rgb(59 130 246 / 0.15);
+    --success: #5fd08a;
+    --success-soft: rgb(34 197 94 / 0.13);
+    --warning: #f5b94a;
+    --warning-soft: rgb(245 158 11 / 0.13);
+    --warning-line: rgb(245 158 11 / 0.3);
+    --danger: #f58a8a;
+    --danger-soft: rgb(239 68 68 / 0.14);
 }
 
 

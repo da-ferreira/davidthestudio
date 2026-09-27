@@ -117,7 +117,7 @@ export function Ticket() {
                     Testes
                   </TabsTrigger>
                 </TabsList>
-                {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
+                {ticket.status === 'running' && <Badge className="bg-info-soft text-info">ao vivo</Badge>}
                 {!isClosed(ticket) && <span className="ml-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
               </div>
               <TabsContent value="spec" className="flex min-h-0 flex-col">
@@ -148,7 +148,7 @@ function LogPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketEv
   }, [events.length])
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-[14px] border border-[#efefef] bg-[#fafafa] px-4 py-3.5 font-mono text-[12.5px]">
+    <div className="min-h-0 flex-1 overflow-auto rounded-[14px] border border-line bg-surface px-4 py-3.5 font-mono text-[12.5px]">
       {events.map((e) => (
         <LogLine key={e.seq} at={e.at} event={e.event} strip={strip} />
       ))}
@@ -163,13 +163,13 @@ const time = (at: string) => new Date(at).toLocaleTimeString('pt-BR')
 function LogLine({ at, event, strip }: { at: string; event: AgentEvent; strip: (s: string) => string }) {
   const row = (label: string, body: React.ReactNode, className?: string) => (
     <div className="flex items-baseline gap-3 py-1">
-      <span className="w-16 shrink-0 text-neutral-400">{time(at)}</span>
+      <span className="w-16 shrink-0 text-faint">{time(at)}</span>
       <span className="min-w-12 shrink-0 font-medium">{label}</span>
-      <span className={cn('min-w-0 flex-1 break-words whitespace-pre-wrap text-neutral-800', className)}>{body}</span>
+      <span className={cn('min-w-0 flex-1 break-words whitespace-pre-wrap text-body', className)}>{body}</span>
     </div>
   )
   if (event.type === 'tool') return row(event.name, strip(toolSummary(event)))
-  if (event.type === 'tool_result' && event.error) return row('', strip(event.output.split('\n')[0]), 'text-red-600')
+  if (event.type === 'tool_result' && event.error) return row('', strip(event.output.split('\n')[0]), 'text-red-600 dark:text-red-400')
   if (event.type === 'note')
     return row(
       'studio',
@@ -183,14 +183,14 @@ function LogLine({ at, event, strip }: { at: string; event: AgentEvent; strip: (
       ) : (
         event.text
       ),
-      'text-violet-700',
+      'text-violet-700 dark:text-violet-400',
     )
   if (event.type === 'result') {
     const spent = event.costUsd !== undefined ? `US$ ${event.costUsd.toFixed(2)}` : event.tokens !== undefined ? `${event.tokens.toLocaleString('pt-BR')} tokens` : null
     const summary = [`${(event.durationMs / 1000).toFixed(0)} s`, `${event.turns} turnos`, spent].filter(Boolean).join(' · ')
     return event.ok
-      ? row('', `✓ concluído · ${summary}`, 'text-green-600')
-      : row('', `✗ ${event.error ?? 'falhou'}`, 'text-red-600')
+      ? row('', `✓ concluído · ${summary}`, 'text-green-600 dark:text-green-400')
+      : row('', `✗ ${event.error ?? 'falhou'}`, 'text-red-600 dark:text-red-400')
   }
   return null
 }
@@ -279,7 +279,7 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
 
   return (
     <aside className="relative flex max-w-[50vw] shrink-0 flex-col gap-4 border-l border-sidebar-border px-5 py-5" style={{ width }}>
-      <div onPointerDown={drag} className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-[#e5e5e5]/60" title="Arraste para redimensionar" />
+      <div onPointerDown={drag} className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-border/60" title="Arraste para redimensionar" />
       <div className="flex items-center gap-2.5">
         <span className="font-medium">Chat</span>
         <span className="text-[13px] text-muted-foreground">{agentLabel(ticket)}</span>
@@ -290,11 +290,11 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
         {messages.map(({ seq, event }) =>
           event.type === 'user' ? (
-            <div key={seq} className="max-w-[88%] self-end rounded-[16px_16px_4px_16px] bg-[#f2f2f2] px-3.5 py-2.5">
+            <div key={seq} className="max-w-[88%] self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
               <Markdown text={event.text} />
             </div>
           ) : event.type === 'text' ? (
-            <Markdown key={seq} text={strip(event.text)} className="text-neutral-800" />
+            <Markdown key={seq} text={strip(event.text)} className="text-body" />
           ) : event.type === 'ask' ? (
             <AskCard
               key={seq}
@@ -307,7 +307,7 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
           ) : null,
         )}
         {ticket.status === 'approval' && (
-          <p className="rounded-[12px] border border-amber-200 bg-amber-50/40 px-3.5 py-2.5 text-[13px]">
+          <p className="rounded-[12px] border border-warning-line bg-warning-soft/40 px-3.5 py-2.5 text-[13px]">
             {ticket.stage === 'spec' ? 'A spec está pronta' : 'O plano está pronto'}. Aprove na aba Spec e plano ou peça ajustes por aqui.
             {ticket.stage === 'spec' && ticket.pickRepos && ' Ao aprovar, ficam só os repositórios da seção "Repositórios" da spec.'}
           </p>
@@ -341,14 +341,14 @@ function AskCard({ ticketId, askId, ask, reply, open }: { ticketId: string; askI
   }
 
   return (
-    <div className={cn('flex flex-col gap-3 rounded-[14px] border px-4 py-3.5', open ? 'border-amber-200 bg-amber-50/40' : 'border-[#efefef]')}>
+    <div className={cn('flex flex-col gap-3 rounded-[14px] border px-4 py-3.5', open ? 'border-warning-line bg-warning-soft/40' : 'border-line')}>
       {ask.kind === 'permission' ? (
         <>
           <div className="flex items-center gap-2 text-[13px] font-medium">
-            <ShieldQuestion className="size-4 text-amber-600" />
+            <ShieldQuestion className="size-4 text-amber-600 dark:text-amber-400" />
             {ask.title}
           </div>
-          <code className="rounded-lg bg-[#fafafa] px-2.5 py-2 font-mono text-[12px] break-all whitespace-pre-wrap">{ask.detail}</code>
+          <code className="rounded-lg bg-surface px-2.5 py-2 font-mono text-[12px] break-all whitespace-pre-wrap">{ask.detail}</code>
           {open ? (
             <div className="flex gap-2">
               <Button size="sm" disabled={busy} onClick={() => send({ allow: true })}>
@@ -420,7 +420,7 @@ function Questions({
                       onClick={() => toggle(q.question, op.label, q.multiSelect)}
                       className={cn(
                         'rounded-[10px] border px-3 py-2 text-left transition-colors',
-                        on ? 'border-neutral-900 bg-[#f2f2f2]' : 'border-[#e5e5e5] hover:bg-[#fafafa]',
+                        on ? 'border-primary bg-accent' : 'border-border hover:bg-surface',
                       )}
                     >
                       <div className="text-[13px] font-medium">{op.label}</div>
@@ -471,7 +471,7 @@ function Composer({ ticket }: { ticket: TicketT }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-end gap-2 rounded-[14px] border border-[#e5e5e5] px-3 py-2 focus-within:border-neutral-400">
+      <div className="flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring">
         <Textarea
           id="composer"
           value={text}
@@ -483,7 +483,7 @@ function Composer({ ticket }: { ticket: TicketT }) {
             }
           }}
           placeholder={isActive(ticket) ? 'Entra quando o agente terminar o que está fazendo' : 'Continuar a conversa…'}
-          className="max-h-40 min-h-9 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
+          className="max-h-40 min-h-9 resize-none border-0 bg-transparent dark:bg-transparent p-1 shadow-none focus-visible:ring-0"
           rows={1}
         />
         <Button size="icon-sm" className="rounded-full" disabled={!text.trim() || busy} onClick={send} aria-label="Enviar">

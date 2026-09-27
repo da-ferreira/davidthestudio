@@ -43,7 +43,7 @@ export function Conta() {
       <Topbar crumbs={['Minha conta']} />
       <div className="flex flex-1 flex-col gap-6 px-8 py-7">
         <h1 className="text-[28px] font-medium tracking-[-0.025em]">Minha conta</h1>
-        <form onSubmit={saveProfile} className="flex max-w-[480px] flex-col gap-4 rounded-[14px] border border-[#efefef] px-5 py-4">
+        <form onSubmit={saveProfile} className="flex max-w-[480px] flex-col gap-4 rounded-[14px] border border-line px-5 py-4">
           <div className="flex flex-col gap-1">
             <span className="font-medium">Perfil</span>
             <span className="text-[13px] text-muted-foreground">
@@ -65,7 +65,7 @@ export function Conta() {
             {note('profile')}
           </div>
         </form>
-        <form onSubmit={savePassword} className="flex max-w-[480px] flex-col gap-4 rounded-[14px] border border-[#efefef] px-5 py-4">
+        <form onSubmit={savePassword} className="flex max-w-[480px] flex-col gap-4 rounded-[14px] border border-line px-5 py-4">
           <span className="font-medium">Senha</span>
           <div className="flex flex-col gap-2">
             <Label>Senha atual</Label>

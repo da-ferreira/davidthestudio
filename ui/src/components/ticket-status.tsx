@@ -3,14 +3,14 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
 const STATUS: Record<TicketStatus, { label: string; className: string }> = {
-  running: { label: 'Rodando', className: 'bg-blue-50 text-blue-700' },
-  waiting: { label: 'Aguardando você', className: 'bg-amber-50 text-amber-700' },
-  approval: { label: 'Aguardando aprovação', className: 'bg-amber-50 text-amber-700' },
-  done: { label: 'Concluído', className: 'bg-green-50 text-green-700' },
-  error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
-  interrupted: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },
-  closed: { label: 'Encerrado', className: 'bg-neutral-100 text-neutral-600' },
-  discarded: { label: 'Descartado', className: 'bg-neutral-100 text-neutral-500' },
+  running: { label: 'Rodando', className: 'bg-info-soft text-info' },
+  waiting: { label: 'Aguardando você', className: 'bg-warning-soft text-warning' },
+  approval: { label: 'Aguardando aprovação', className: 'bg-warning-soft text-warning' },
+  done: { label: 'Concluído', className: 'bg-success-soft text-success' },
+  error: { label: 'Erro', className: 'bg-danger-soft text-danger' },
+  interrupted: { label: 'Parado', className: 'bg-muted text-subtle' },
+  closed: { label: 'Encerrado', className: 'bg-muted text-subtle' },
+  discarded: { label: 'Descartado', className: 'bg-muted text-muted-foreground' },
 }
 
 // Apelidos do Claude ficam com maiúscula; ids de versão (claude-opus-5) aparecem como estão.

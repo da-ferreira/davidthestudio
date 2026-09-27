@@ -60,7 +60,7 @@ export function Workspaces() {
         <h1 className="text-[28px] font-medium tracking-[-0.025em]">Workspaces</h1>
         {items?.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed py-16 text-center">
-            <div className="flex size-10 items-center justify-center rounded-[10px] border bg-white shadow-xs">
+            <div className="flex size-10 items-center justify-center rounded-[10px] border bg-card shadow-xs">
               <FolderPlus className="size-[18px]" />
             </div>
             <div className="font-medium">Nenhum workspace ainda</div>
@@ -85,7 +85,7 @@ export function Workspaces() {
               <Link
                 key={w.id}
                 to={`/w/${w.id}/tickets`}
-                className="group relative flex flex-col gap-3 rounded-xl border p-5 transition-colors hover:border-neutral-300"
+                className="group relative flex flex-col gap-3 rounded-xl border p-5 transition-colors hover:border-line-strong"
               >
                 <Button
                   variant="ghost"

@@ -8,12 +8,12 @@ import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const STATUS: Record<TestStatus, { label: string; className: string }> = {
-  running: { label: 'Rodando', className: 'bg-blue-50 text-blue-700' },
-  passed: { label: 'Passou', className: 'bg-green-50 text-green-700' },
-  failed: { label: 'Falhou', className: 'bg-red-50 text-red-700' },
-  stopped: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },
-  error: { label: 'Não terminou', className: 'bg-red-50 text-red-700' },
-  interrupted: { label: 'Interrompido', className: 'bg-amber-50 text-amber-700' },
+  running: { label: 'Rodando', className: 'bg-info-soft text-info' },
+  passed: { label: 'Passou', className: 'bg-success-soft text-success' },
+  failed: { label: 'Falhou', className: 'bg-danger-soft text-danger' },
+  stopped: { label: 'Parado', className: 'bg-muted text-subtle' },
+  error: { label: 'Não terminou', className: 'bg-danger-soft text-danger' },
+  interrupted: { label: 'Interrompido', className: 'bg-warning-soft text-warning' },
 }
 
 export function TestsPanel({ ticket, runs }: { ticket: Ticket; runs: TestRun[] }) {
@@ -41,7 +41,7 @@ export function TestsPanel({ ticket, runs }: { ticket: Ticket; runs: TestRun[] }
 
   return (
     <div className="-mr-8 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pr-8">
-      <div className="flex items-start gap-4 rounded-[14px] border border-[#efefef] px-5 py-4">
+      <div className="flex items-start gap-4 rounded-[14px] border border-line px-5 py-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {commands?.map((c) => (
             <div key={c.repo} className="flex items-baseline gap-3 text-[13px]">
@@ -112,7 +112,7 @@ function RunCard({ run, newest, onSend }: { run: TestRun; newest: boolean; onSen
   }, [open])
 
   return (
-    <section className="flex flex-col rounded-[14px] border border-[#efefef]">
+    <section className="flex flex-col rounded-[14px] border border-line">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex items-center gap-2.5 px-5 py-3.5 text-left">
         <ChevronRight className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-90')} />
         <span className="font-medium">{run.repo}</span>
@@ -128,7 +128,7 @@ function RunCard({ run, newest, onSend }: { run: TestRun; newest: boolean; onSen
         <div className="mx-5 mb-4 flex flex-col gap-3">
           <pre
             ref={out}
-            className="max-h-[440px] overflow-auto rounded-[10px] border border-[#efefef] bg-[#fafafa] px-3.5 py-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-neutral-800"
+            className="max-h-[440px] overflow-auto rounded-[10px] border border-line bg-surface px-3.5 py-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-body"
           >
             {run.output || (run.status === 'running' ? 'Iniciando…' : 'Sem saída.')}
           </pre>

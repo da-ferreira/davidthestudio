@@ -61,17 +61,17 @@ export function NovoTicket() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col items-center gap-7 px-10 py-10">
           <h1 className="text-[30px] font-medium tracking-[-0.025em]">O que vamos fazer em {ws?.name ?? '…'}?</h1>
-          <div className="flex w-full max-w-[760px] flex-col gap-3.5 rounded-[22px] border bg-white p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
+          <div className="flex w-full max-w-[760px] flex-col gap-3.5 rounded-[22px] border bg-card p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
             <input
               autoFocus
               placeholder="Título do ticket"
-              className="text-base font-medium outline-none placeholder:text-neutral-400"
+              className="text-base font-medium outline-none placeholder:text-faint"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
             <Textarea
               placeholder="Descreva o que o agente deve fazer: o problema, onde mexer, como saber que ficou pronto."
-              className="min-h-[110px] resize-none border-0 bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+              className="min-h-[110px] resize-none border-0 bg-transparent dark:bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -87,7 +87,7 @@ export function NovoTicket() {
                       onClick={() => toggle(r.name)}
                       className={cn(
                         'flex h-7 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors',
-                        on ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-dashed text-muted-foreground hover:text-foreground',
+                        on ? 'border-primary bg-primary text-primary-foreground' : 'border-dashed text-muted-foreground hover:text-foreground',
                       )}
                     >
                       {on ? <Check className="size-3" /> : <GitBranch className="size-3" />}
@@ -126,7 +126,7 @@ export function NovoTicket() {
               </span>
             )}
             {agent === 'codex' && (
-              <div className="flex items-start gap-2.5 rounded-[10px] bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+              <div className="flex items-start gap-2.5 rounded-[10px] bg-warning-soft px-3 py-2.5 text-[13px] text-amber-900 dark:text-amber-200">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                 <span>
                   O Codex não pede permissão: roda sozinho numa sandbox que só grava na pasta da tarefa, com internet e sem acesso aos .env. Dúvidas

@@ -9,7 +9,7 @@ export function Topbar({ crumbs, actions }: { crumbs: string[]; actions?: ReactN
       <nav className="flex items-center gap-2 text-muted-foreground">
         {crumbs.map((c, i) => (
           <Fragment key={c}>
-            {i > 0 && <ChevronRight className="size-4 text-neutral-400" />}
+            {i > 0 && <ChevronRight className="size-4 text-faint" />}
             <span className={i === crumbs.length - 1 ? 'font-medium text-foreground' : ''}>{c}</span>
           </Fragment>
         ))}

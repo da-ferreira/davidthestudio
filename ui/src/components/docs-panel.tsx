@@ -48,12 +48,12 @@ function DocCard({ ticket, stage, text, onDocs }: { ticket: Ticket; stage: DocSt
   const approve = () => act(api(`/tickets/${ticket.id}/approve`, { method: 'POST', body: { stage } }))
 
   let badge: React.ReactNode = null
-  if (passed) badge = <Badge className="bg-green-50 text-green-700">{ticket.gates.includes(stage) ? d.approved : d.ready}</Badge>
-  else if (current && ticket.status === 'approval') badge = <Badge className="bg-amber-50 text-amber-700">aguardando aprovação</Badge>
-  else if (current && text) badge = <Badge className="bg-neutral-100 text-neutral-600">rascunho</Badge>
+  if (passed) badge = <Badge className="bg-success-soft text-success">{ticket.gates.includes(stage) ? d.approved : d.ready}</Badge>
+  else if (current && ticket.status === 'approval') badge = <Badge className="bg-warning-soft text-warning">aguardando aprovação</Badge>
+  else if (current && text) badge = <Badge className="bg-muted text-subtle">rascunho</Badge>
 
   return (
-    <section className="flex flex-col gap-3 rounded-[14px] border border-[#efefef] px-5 py-4">
+    <section className="flex flex-col gap-3 rounded-[14px] border border-line px-5 py-4">
       <div className="flex items-center gap-2.5">
         <FileText className="size-4 text-muted-foreground" />
         <span className="font-mono text-[13px]">{d.file}</span>

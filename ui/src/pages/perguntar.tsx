@@ -25,10 +25,10 @@ import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 const STATUS: Record<ConversationStatus, { label: string; className: string } | null> = {
-  running: { label: 'Respondendo', className: 'bg-blue-50 text-blue-700' },
+  running: { label: 'Respondendo', className: 'bg-info-soft text-info' },
   idle: null,
-  error: { label: 'Erro', className: 'bg-red-50 text-red-700' },
-  interrupted: { label: 'Parado', className: 'bg-neutral-100 text-neutral-600' },
+  error: { label: 'Erro', className: 'bg-danger-soft text-danger' },
+  interrupted: { label: 'Parado', className: 'bg-muted text-subtle' },
 }
 
 const date = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -65,7 +65,7 @@ export function Perguntar() {
             <Link
               key={c.id}
               to={`/w/${id}/perguntar/${c.id}`}
-              className={cn('flex flex-col gap-0.5 rounded-[10px] px-3 py-2 hover:bg-[#f7f7f7]', c.id === conversationId && 'bg-[#f2f2f2] hover:bg-[#f2f2f2]')}
+              className={cn('flex flex-col gap-0.5 rounded-[10px] px-3 py-2 hover:bg-surface-2', c.id === conversationId && 'bg-accent hover:bg-accent')}
             >
               <span className="truncate text-[14px]">{c.title}</span>
               <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -123,11 +123,11 @@ function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: st
         <h1 className="text-[28px] font-medium tracking-[-0.025em]">O que você quer saber sobre {workspaceName ?? '…'}?</h1>
         <span className="text-muted-foreground">O agente lê os repositórios na branch padrão e o contexto do workspace. Não muda nada.</span>
       </div>
-      <div className="flex w-full max-w-[720px] flex-col gap-3 rounded-[22px] border bg-white p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
+      <div className="flex w-full max-w-[720px] flex-col gap-3 rounded-[22px] border bg-card p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
         <Textarea
           autoFocus
           placeholder="Ex.: como funciona a autenticação entre o app e a API?"
-          className="min-h-[96px] resize-none border-0 bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+          className="min-h-[96px] resize-none border-0 bg-transparent dark:bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -221,7 +221,7 @@ function Chat({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-[#f0f0f0] px-8 py-4">
+      <div className="flex items-center gap-3 border-b border-line px-8 py-4">
         <h1 className="min-w-0 truncate text-[18px] font-medium tracking-[-0.02em]">{c.title}</h1>
         {status && <Badge className={status.className}>{status.label}</Badge>}
         <span className="shrink-0 text-[13px] text-muted-foreground">
@@ -281,17 +281,17 @@ function Chat({
 function Message({ event, strip }: { event: AgentEvent; strip: (s: string) => string }) {
   if (event.type === 'user')
     return (
-      <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-[#f2f2f2] px-3.5 py-2.5">
+      <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
         <Markdown text={event.text} />
       </div>
     )
-  if (event.type === 'text') return <Markdown text={event.text} className="text-neutral-800" />
+  if (event.type === 'text') return <Markdown text={event.text} className="text-body" />
   if (event.type === 'tool') {
     const i = event.input
     const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
     const detail = s('file_path') || s('pattern') || s('command') || s('query') || s('url')
     return (
-      <span className="truncate font-mono text-[12px] text-neutral-400">
+      <span className="truncate font-mono text-[12px] text-faint">
         {event.name} {strip(detail)}
       </span>
     )
@@ -317,7 +317,7 @@ function Composer({ conversationId, running }: { conversationId: string; running
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-end gap-2 rounded-[14px] border border-[#e5e5e5] px-3 py-2 focus-within:border-neutral-400">
+      <div className="flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring">
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -328,7 +328,7 @@ function Composer({ conversationId, running }: { conversationId: string; running
             }
           }}
           placeholder={running ? 'Entra quando o agente terminar a resposta' : 'Continuar a conversa…'}
-          className="max-h-40 min-h-9 resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0"
+          className="max-h-40 min-h-9 resize-none border-0 bg-transparent dark:bg-transparent p-1 shadow-none focus-visible:ring-0"
           rows={1}
         />
         <Button size="icon-sm" className="rounded-full" disabled={!text.trim() || busy} onClick={send} aria-label="Enviar">

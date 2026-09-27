@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router'
-import { ArrowLeft, FolderGit2, LayoutGrid, LogOut, MessageCircleQuestion, Plug, Ticket, Users } from 'lucide-react'
+import { ArrowLeft, FolderGit2, LayoutGrid, LogOut, MessageCircleQuestion, Monitor, Moon, Plug, Sun, Ticket, Users } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import {
   Sidebar,
@@ -13,9 +13,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { getTheme, setTheme, type Theme } from '@/lib/theme'
 
 export function AppSidebar() {
   const wsId = useMatch('/w/:id/*')?.params.id
@@ -91,7 +93,7 @@ function WorkspaceNav({ id }: { id: string }) {
 
   return (
     <SidebarGroup className="gap-3">
-      <div className="flex flex-col gap-2 rounded-xl border bg-white p-3">
+      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3">
         <div className="flex items-center gap-2.5">
           <div className="flex size-7 items-center justify-center rounded-[7px] bg-primary text-[13px] font-semibold text-primary-foreground">
             {ws?.name[0]?.toUpperCase() ?? '·'}
@@ -148,13 +150,42 @@ function Account() {
   return (
     <div className="flex items-center gap-2.5">
       <Link to="/conta" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md hover:text-foreground">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[12px] font-medium">{user.name[0]?.toUpperCase()}</div>
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-border text-[12px] font-medium">{user.name[0]?.toUpperCase()}</div>
         <span className="truncate text-[14px]">{user.name}</span>
       </Link>
+      <ThemeMenu />
       <button type="button" aria-label="Sair" title="Sair" onClick={logout} className="text-muted-foreground hover:text-foreground">
         <LogOut className="size-4" />
       </button>
     </div>
+  )
+}
+
+const themeIcon = { light: Sun, dark: Moon, system: Monitor }
+
+function ThemeMenu() {
+  const [theme, setThemeState] = useState(getTheme)
+  const Icon = themeIcon[theme]
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger aria-label="Aparência" title="Aparência" className="text-muted-foreground outline-none hover:text-foreground">
+        <Icon className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="end" className="w-36">
+        <DropdownMenuRadioGroup
+          value={theme}
+          onValueChange={(v) => {
+            setTheme(v as Theme)
+            setThemeState(v as Theme)
+          }}
+        >
+          <DropdownMenuRadioItem value="light">Claro</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">Escuro</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">Sistema</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -169,7 +200,7 @@ function DaemonStatus() {
 
   return (
     <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <span className={cn('size-2 rounded-full', ok === null ? 'bg-neutral-300' : ok ? 'bg-green-500' : 'bg-red-500')} />
+      <span className={cn('size-2 rounded-full', ok === null ? 'bg-line-strong' : ok ? 'bg-green-500' : 'bg-red-500')} />
       {ok === false ? 'Daemon fora do ar' : 'Local'}
     </div>
   )

@@ -78,7 +78,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
       {isClosed(ticket) ? (
         <span className="text-[12.5px] text-muted-foreground">Diff gravado quando o ticket foi encerrado.</span>
       ) : (
-        <div className="flex flex-col gap-2 rounded-[14px] border border-[#efefef] px-4 py-3.5">
+        <div className="flex flex-col gap-2 rounded-[14px] border border-line px-4 py-3.5">
           <div className="flex items-center gap-2">
             <Input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Mensagem do commit" className="flex-1" />
             <Button disabled={active || !uncommitted || !message.trim() || !!busy} onClick={commit}>
@@ -97,7 +97,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
                 : 'Tudo commitado.'}
           </span>
           {warnings && (
-            <div className="flex items-start gap-3 rounded-[10px] bg-amber-50 px-3.5 py-3 text-[13px] text-amber-900">
+            <div className="flex items-start gap-3 rounded-[10px] bg-warning-soft px-3.5 py-3 text-[13px] text-amber-900 dark:text-amber-200">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
               <div className="flex flex-1 flex-col gap-0.5">
                 {warnings.map((w) => (
@@ -146,8 +146,8 @@ function RepoSection({ diff }: { diff: RepoDiff }) {
         <span className="text-[13px] text-muted-foreground">
           a partir de <span className="font-mono">{diff.base}</span> · {diff.files.length} arquivo(s)
         </span>
-        <span className="font-mono text-[12.5px] text-green-700">+{add}</span>
-        <span className="font-mono text-[12.5px] text-red-600">−{del}</span>
+        <span className="font-mono text-[12.5px] text-success">+{add}</span>
+        <span className="font-mono text-[12.5px] text-red-600 dark:text-red-400">−{del}</span>
         {diff.pr && (
           <a href={diff.pr} target="_blank" rel="noreferrer" className="ml-auto">
             <Badge variant="outline" className="h-6 gap-1.5 font-normal">
@@ -165,7 +165,7 @@ function RepoSection({ diff }: { diff: RepoDiff }) {
               <span>{c.subject}</span>
             </div>
           ))}
-          {diff.unpushed > 0 && <span className="text-[12.5px] text-amber-700">{diff.unpushed} commit(s) ainda não enviados</span>}
+          {diff.unpushed > 0 && <span className="text-[12.5px] text-warning">{diff.unpushed} commit(s) ainda não enviados</span>}
         </div>
       )}
       {diff.files.length === 0 && <span className="text-[13px] text-muted-foreground">Sem mudanças.</span>}
@@ -189,15 +189,15 @@ function FileBlock({ file }: { file: FileChange }) {
   )
 
   return (
-    <div className="overflow-hidden rounded-[12px] border border-[#efefef]">
-      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 bg-[#fafafa] px-3 py-2 text-left">
+    <div className="overflow-hidden rounded-[12px] border border-line">
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 bg-surface px-3 py-2 text-left">
         <ChevronRight className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-90')} />
         <span className="font-mono text-[12.5px]">{file.path}</span>
         <Badge variant="outline" className="font-normal">
           {STATUS_LABEL[file.status] ?? file.status}
         </Badge>
-        <span className="ml-auto font-mono text-[12px] text-green-700">+{file.additions}</span>
-        <span className="font-mono text-[12px] text-red-600">−{file.deletions}</span>
+        <span className="ml-auto font-mono text-[12px] text-success">+{file.additions}</span>
+        <span className="font-mono text-[12px] text-red-600 dark:text-red-400">−{file.deletions}</span>
       </button>
       {open && (
         <pre className="overflow-x-auto py-1 font-mono text-[12px] leading-[1.6]">
@@ -207,9 +207,9 @@ function FileBlock({ file }: { file: FileChange }) {
                 key={i}
                 className={cn(
                   'px-3',
-                  l.startsWith('+') && 'bg-green-50 text-green-900',
-                  l.startsWith('-') && 'bg-red-50 text-red-900',
-                  l.startsWith('@@') && 'text-blue-700/70',
+                  l.startsWith('+') && 'bg-success-soft text-green-900 dark:text-green-200',
+                  l.startsWith('-') && 'bg-danger-soft text-red-900 dark:text-red-200',
+                  l.startsWith('@@') && 'text-info/70',
                 )}
               >
                 {l || ' '}

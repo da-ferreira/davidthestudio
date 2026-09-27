@@ -110,7 +110,7 @@ export function Repositorios() {
                     </TableCell>
                     <TableCell className="font-mono text-[12px]">
                       {r.test ?? <span className="text-muted-foreground">—</span>}
-                      {r.hasEnv && <Badge className="ml-2 bg-blue-50 font-sans text-blue-700">.env</Badge>}
+                      {r.hasEnv && <Badge className="ml-2 bg-info-soft font-sans text-info">.env</Badge>}
                     </TableCell>
                     <TableCell className="max-w-[320px] truncate font-mono text-[12px] text-muted-foreground">
                       {r.remote ?? '—'}
@@ -518,13 +518,13 @@ function ContextCard({ ws, onDone }: { ws: WorkspaceDetail; onDone: (ws: Workspa
 
   return (
     <div className="flex items-center gap-3.5 rounded-xl border px-4 py-3.5">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[#f4f4f4]">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-muted">
         <FileText className="size-4 text-muted-foreground" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-2 font-medium">
           Contexto dos agentes
-          {ws.context === 'unified' && <Badge className="bg-green-50 text-green-700">unificado</Badge>}
+          {ws.context === 'unified' && <Badge className="bg-success-soft text-success">unificado</Badge>}
         </div>
         <span className="text-[13px] text-muted-foreground">{c.text}</span>
         {error && <span className="text-[13px] text-destructive">{error}</span>}

@@ -64,7 +64,7 @@ export function Usuarios() {
                 <TableRow key={u.id}>
                   <TableCell className="pl-4 font-medium">
                     {u.name}
-                    {u.admin && <Badge className="ml-2 bg-neutral-100 text-neutral-600">Administrador</Badge>}
+                    {u.admin && <Badge className="ml-2 bg-muted text-subtle">Administrador</Badge>}
                   </TableCell>
                   <TableCell className="font-mono text-[13px] text-muted-foreground">{u.username}</TableCell>
                   <TableCell className="text-muted-foreground">{u.email}</TableCell>
