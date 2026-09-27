@@ -5,7 +5,7 @@ import { promisify } from 'node:util'
 import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
-import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
+import { agentModels, agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
 import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
@@ -295,6 +295,9 @@ function dropAsks(id: string) {
   for (const [askId, a] of asks) if (a.ticket === id) asks.delete(askId)
 }
 
+const COMMIT_FILE = 'commit.md'
+const COMMIT_MSG = `Ao terminar, escreva em ${DOCS_DIR}/${COMMIT_FILE} a mensagem de commit sugerida para o diff: uma linha só, no estilo e na língua dos commits recentes do repositório (git log). Se fizer novos ajustes, atualize.`
+
 const STAGE_INSTRUCTIONS: Record<Stage, string> = {
   spec: [
     'Etapa atual: Spec. Não altere código nesta etapa.',
@@ -309,8 +312,11 @@ const STAGE_INSTRUCTIONS: Record<Stage, string> = {
     'Cada passo pequeno e verificável; inclua os testes que vai criar ou rodar.',
     'Ao terminar, responda com um resumo curto. O humano vai aprovar o plano ou pedir ajustes.',
   ].join('\n'),
-  implement: `Etapa atual: Implementação. Se existir ${DOCS_DIR}/plan.md, siga o plano e marque cada passo como - [x] no arquivo ao concluir; se precisar desviar dele, avise.`,
-  review: 'Etapa atual: Revisão. O humano está revisando o diff; faça só os ajustes que ele pedir.',
+  implement: [
+    `Etapa atual: Implementação. Se existir ${DOCS_DIR}/plan.md, siga o plano e marque cada passo como - [x] no arquivo ao concluir; se precisar desviar dele, avise.`,
+    COMMIT_MSG,
+  ].join('\n'),
+  review: ['Etapa atual: Revisão. O humano está revisando o diff; faça só os ajustes que ele pedir.', COMMIT_MSG].join('\n'),
 }
 
 const PICK_REPOS = [
@@ -520,6 +526,12 @@ async function narrowRepos(t: Ticket) {
   return chosen
 }
 
+export function suggestedCommit(id: string): string | null {
+  const file = path.join(getTicket(id).taskDir, DOCS_DIR, COMMIT_FILE)
+  if (!fs.existsSync(file)) return null
+  return fs.readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).find(Boolean) ?? null
+}
+
 export function getDocs(id: string): TicketDocs {
   const t = getTicket(id)
   return { spec: readDoc(t, 'spec'), plan: readDoc(t, 'plan') }
@@ -581,13 +593,30 @@ export async function getDiff(id: string): Promise<RepoDiff[]> {
   )
 }
 
+// O modelo que rodou de fato: o evento start guarda o nome resolvido (ex.: claude-opus-5-5), não o apelido.
+async function coAuthor(t: Ticket) {
+  const started = listEvents(t.id).map((e) => e.event).filter((e) => e.type === 'start')
+  const model = started.at(-1)?.model || t.model
+  if (t.agent === 'claude') {
+    const m = model?.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/)
+    const name = m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}` : model
+    return `Claude${name ? ` ${name}` : ''} <noreply@anthropic.com>`
+  }
+  let name: string | undefined = model
+  try {
+    const list = await agentModels(owner(t), 'codex')
+    name = model ? (list.find((x) => x.id === model)?.label ?? model) : list[0]?.label.match(/\((.+)\)$/)?.[1]
+  } catch {}
+  return `Codex${name ? ` ${name}` : ''} <noreply@openai.com>`
+}
+
 // Commit no nome de quem aprovou (usuário do studio) e o agente como coautor.
 export async function commitTicket(id: string, input: string, user: User) {
   const t = getTicket(id)
   assertIdle(t)
   const subject = input?.trim()
   if (!subject) throw new HttpError(400, 'Escreva a mensagem do commit')
-  const message = `${subject}\n\nTicket ${t.id} do david the studio.\n\nCo-Authored-By: ${t.agent === 'codex' ? 'Codex <noreply@openai.com>' : 'Claude <noreply@anthropic.com>'}`
+  const message = `${subject}\n\nTicket ${t.id} do david the studio.\n\nCo-Authored-By: ${await coAuthor(t)}`
 
   const dirs = t.repos.map((repo) => ({ repo, dir: path.join(t.taskDir, repo) }))
   const toCommit: typeof dirs = []

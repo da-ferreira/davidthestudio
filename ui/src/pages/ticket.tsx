@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router'
-import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
+import { type PointerEvent, useEffect, useRef, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router'
+import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, PanelRightClose, PanelRightOpen, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
 import type { AgentEvent, Ask, Reply, TestRun, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,8 @@ import { TicketStatusBadge, isActive, isClosed, agentLabel } from '@/components/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+const TABS = ['spec', 'log', 'diff', 'testes']
 
 export function Ticket() {
   const { id, ticketId } = useParams()
@@ -55,6 +57,11 @@ export function Ticket() {
 
   const strip = (s: string) => (ticket ? s.replaceAll(ticket.taskDir + '/', '') : s)
 
+  const [params, setParams] = useSearchParams()
+  const sdd = !!ticket && hasSdd(ticket, docs)
+  const aba = params.get('aba')
+  const tab = TABS.includes(aba ?? '') && (aba !== 'spec' || sdd) ? aba! : ticket?.stage === 'spec' || ticket?.stage === 'plan' ? 'spec' : 'log'
+
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <Topbar crumbs={[ws?.name ?? '…', 'Tickets', ticketId ?? '']} />
@@ -64,33 +71,35 @@ export function Ticket() {
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex flex-col gap-3 px-8 pt-6">
               <div className="flex items-center gap-3">
-                <span className="font-mono text-sm text-muted-foreground">{ticket.id}</span>
-                <h1 className="text-2xl font-medium tracking-[-0.025em]">{ticket.title}</h1>
+                <span className="shrink-0 font-mono text-sm text-muted-foreground">{ticket.id}</span>
+                <h1 className="min-w-0 truncate text-2xl font-medium tracking-[-0.025em]" title={ticket.title}>
+                  {ticket.title}
+                </h1>
                 <TicketStatusBadge status={ticket.status} />
                 {isActive(ticket) && <StopButton ticketId={ticket.id} />}
                 {!isActive(ticket) && !isClosed(ticket) && <CloseTicketButton ticket={ticket} />}
               </div>
-              <div className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
-                <Badge variant="outline" className="h-6 gap-1.5 font-mono font-normal">
+              <div className="flex flex-wrap items-center gap-2.5 text-[13px] text-muted-foreground">
+                <Badge variant="outline" className="h-6 max-w-full gap-1.5 font-mono font-normal" title={ticket.branch}>
                   <GitBranch />
-                  {ticket.branch}
+                  <span className="truncate">{ticket.branch}</span>
                 </Badge>
                 <Badge variant="outline" className="h-6 font-normal">
                   {agentLabel(ticket)}
                 </Badge>
-                <span>criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                <span className="whitespace-nowrap">criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
               </div>
               <StageStepper ticket={ticket} docs={docs} />
             </div>
             <Tabs
-              key={ticket.id}
-              defaultValue={ticket.stage === 'spec' || ticket.stage === 'plan' ? 'docs' : 'log'}
+              value={tab}
+              onValueChange={(v) => setParams((p) => (p.set('aba', v), p))}
               className="flex min-h-0 flex-1 flex-col gap-3 px-8 py-5"
             >
               <div className="flex items-center gap-2.5">
                 <TabsList>
-                  {hasSdd(ticket, docs) && (
-                    <TabsTrigger value="docs" className="px-3">
+                  {sdd && (
+                    <TabsTrigger value="spec" className="px-3">
                       <FileText />
                       Spec e plano
                     </TabsTrigger>
@@ -103,7 +112,7 @@ export function Ticket() {
                     <FileDiff />
                     Diff
                   </TabsTrigger>
-                  <TabsTrigger value="tests" className="px-3">
+                  <TabsTrigger value="testes" className="px-3">
                     <FlaskConical />
                     Testes
                   </TabsTrigger>
@@ -111,7 +120,7 @@ export function Ticket() {
                 {ticket.status === 'running' && <Badge className="bg-blue-50 text-blue-700">ao vivo</Badge>}
                 {!isClosed(ticket) && <span className="ml-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
               </div>
-              <TabsContent value="docs" className="flex min-h-0 flex-col">
+              <TabsContent value="spec" className="flex min-h-0 flex-col">
                 <DocsPanel ticket={ticket} docs={docs} onDocs={setDocs} />
               </TabsContent>
               <TabsContent value="log" className="flex min-h-0 flex-col">
@@ -120,7 +129,7 @@ export function Ticket() {
               <TabsContent value="diff" className="flex min-h-0 flex-col">
                 <DiffPanel ticket={ticket} />
               </TabsContent>
-              <TabsContent value="tests" className="flex min-h-0 flex-col">
+              <TabsContent value="testes" className="flex min-h-0 flex-col">
                 <TestsPanel ticket={ticket} runs={runs} />
               </TabsContent>
             </Tabs>
@@ -207,20 +216,76 @@ function StopButton({ ticketId }: { ticketId: string }) {
   )
 }
 
+const CHAT_WIDTH = 'studio.chat.width'
+const CHAT_COLLAPSED = 'studio.chat.collapsed'
+
+// Preferência só deste navegador; sem storage (aba anônima, bloqueio) fica o padrão.
+function load(key: string) {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function save(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {}
+}
+
 function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketEvent[]; strip: (s: string) => string }) {
   const end = useRef<HTMLDivElement>(null)
   const messages = events.filter((e) => ['user', 'text', 'ask'].includes(e.event.type))
   const replies = new Map<string, Reply>()
   for (const { event } of events) if (event.type === 'answer') replies.set(event.id, event.reply)
+  const [width, setWidth] = useState(() => Number(load(CHAT_WIDTH)) || 440)
+  const [collapsed, setCollapsed] = useState(() => load(CHAT_COLLAPSED) === '1')
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, replies.size])
+  }, [messages.length, replies.size, collapsed])
+
+  const collapse = (v: boolean) => {
+    setCollapsed(v)
+    save(CHAT_COLLAPSED, v ? '1' : '0')
+  }
+
+  const drag = (e: PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = width
+    const handle = e.currentTarget
+    handle.setPointerCapture(e.pointerId)
+    let w = startW
+    handle.onpointermove = (m) => {
+      w = Math.min(Math.max(startW + startX - m.clientX, 320), window.innerWidth / 2)
+      setWidth(w)
+    }
+    handle.onpointerup = () => {
+      handle.onpointermove = null
+      handle.onpointerup = null
+      save(CHAT_WIDTH, String(Math.round(w)))
+    }
+  }
+
+  if (collapsed)
+    return (
+      <aside className="flex shrink-0 flex-col items-center border-l border-sidebar-border px-2 py-5">
+        <Button variant="ghost" size="icon" title="Abrir o chat" onClick={() => collapse(false)}>
+          <PanelRightOpen />
+        </Button>
+      </aside>
+    )
 
   return (
-    <aside className="flex w-[440px] shrink-0 flex-col gap-4 border-l border-sidebar-border px-5 py-5">
+    <aside className="relative flex max-w-[50vw] shrink-0 flex-col gap-4 border-l border-sidebar-border px-5 py-5" style={{ width }}>
+      <div onPointerDown={drag} className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-[#e5e5e5]/60" title="Arraste para redimensionar" />
       <div className="flex items-center gap-2.5">
         <span className="font-medium">Chat</span>
         <span className="text-[13px] text-muted-foreground">{agentLabel(ticket)}</span>
+        <Button variant="ghost" size="icon" className="ml-auto size-7" title="Recolher o chat" onClick={() => collapse(true)}>
+          <PanelRightClose />
+        </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
         {messages.map(({ seq, event }) =>

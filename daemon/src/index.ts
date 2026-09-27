@@ -202,6 +202,7 @@ app.post<{ Params: { id: string }; Body: { stage: DocStage } }>('/api/tickets/:i
   return tickets.getTicket(req.params.id)
 })
 app.get<{ Params: { id: string } }>('/api/tickets/:id/diff', async (req) => tickets.getDiff(req.params.id))
+app.get<{ Params: { id: string } }>('/api/tickets/:id/commit', async (req) => ({ message: tickets.suggestedCommit(req.params.id) }))
 app.post<{ Params: { id: string }; Body: { message: string } }>('/api/tickets/:id/commit', async (req) => {
   await tickets.commitTicket(req.params.id, req.body.message, req.user)
   return tickets.getDiff(req.params.id)

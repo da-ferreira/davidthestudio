@@ -16,7 +16,7 @@ const DOC: Record<DocStage, { file: string; the: string; ready: string; approved
 
 export function DocsPanel({ ticket, docs, onDocs }: { ticket: Ticket; docs: TicketDocs | null; onDocs: (d: TicketDocs) => void }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
+    <div className="-mr-8 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pr-8">
       {(['spec', 'plan'] as const).map((st) => (
         <DocCard key={st} ticket={ticket} stage={st} text={docs?.[st] ?? null} onDocs={onDocs} />
       ))}

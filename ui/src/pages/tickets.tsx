@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Ticket, TicketStatus, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Topbar } from '@/components/topbar'
 import { TicketStatusBadge, agentLabel } from '@/components/ticket-status'
@@ -80,8 +81,12 @@ export function Tickets() {
                     <TableCell className="pl-4 font-mono text-[12px] text-muted-foreground">
                       <Link to={`/w/${id}/tickets/${t.id}`}>{t.id}</Link>
                     </TableCell>
-                    <TableCell className="font-medium">{t.title}</TableCell>
-                    <TableCell className="text-muted-foreground">{t.pickRepos ? 'o agente escolhe' : t.repos.join(', ')}</TableCell>
+                    <TableCell className="w-full max-w-0 font-medium">
+                      <Truncated text={t.title} />
+                    </TableCell>
+                    <TableCell className="max-w-[180px] text-muted-foreground">
+                      <Truncated text={t.pickRepos ? 'o agente escolhe' : t.repos.join(', ')} />
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{t.author ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{agentLabel(t)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>
@@ -98,5 +103,20 @@ export function Tickets() {
         )}
       </div>
     </>
+  )
+}
+
+// Tooltip só quando o texto foi cortado.
+function Truncated({ text }: { text: string }) {
+  const [cut, setCut] = useState(false)
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block truncate" onPointerEnter={(e) => setCut(e.currentTarget.scrollWidth > e.currentTarget.clientWidth)}>
+          {text}
+        </span>
+      </TooltipTrigger>
+      {cut && <TooltipContent className="max-w-[420px] whitespace-normal">{text}</TooltipContent>}
+    </Tooltip>
   )
 }

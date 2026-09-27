@@ -30,6 +30,14 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
     load()
   }, [ticket.id, ticket.status])
 
+  // O agente deixa a mensagem sugerida ao fim de cada turno; sem ela, fica o título.
+  useEffect(() => {
+    if (isActive(ticket)) return
+    api<{ message: string | null }>(`/tickets/${ticket.id}/commit`)
+      .then((r) => r.message && setMessage(r.message))
+      .catch(() => {})
+  }, [ticket.id, ticket.status])
+
   const act = (kind: 'commit' | 'pr') => {
     setBusy(kind)
     setError(null)
@@ -85,7 +93,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
             {active
               ? 'O agente está trabalhando; espere ele terminar ou pare para commitar.'
               : uncommitted
-                ? `${uncommitted} arquivo(s) sem commit. O commit sai com o seu nome e e-mail do studio e o ${ticket.agent === 'codex' ? 'Codex' : 'Claude'} como coautor.`
+                ? `${uncommitted} arquivo(s) sem commit. O commit sai com o seu nome e e-mail do studio e o ${ticket.agent === 'codex' ? 'Codex' : 'Claude'} como coautor, com o modelo que rodou.`
                 : 'Tudo commitado.'}
           </span>
           {warnings && (
@@ -118,7 +126,7 @@ export function DiffPanel({ ticket }: { ticket: Ticket }) {
           )}
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto">
+      <div className="-mr-8 flex min-h-0 flex-1 flex-col gap-6 overflow-auto pr-8">
         {diffs === null && !error && <span className="text-muted-foreground">Carregando…</span>}
         {diffs?.map((d) => (
           <RepoSection key={d.repo} diff={d} />

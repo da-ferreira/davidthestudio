@@ -30,7 +30,7 @@ export function StageStepper({ ticket, docs }: { ticket: Ticket; docs: TicketDoc
   const progress = planProgress(docs?.plan ?? null)
 
   return (
-    <div className="flex items-center gap-2 text-[13px]">
+    <div className="flex flex-wrap items-center gap-2 text-[13px]">
       {steps.map((s, i) => {
         const done = i < current
         const now = i === current

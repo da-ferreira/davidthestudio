@@ -40,7 +40,7 @@ export function TestsPanel({ ticket, runs }: { ticket: Ticket; runs: TestRun[] }
   const newest = [...runs].reverse()
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
+    <div className="-mr-8 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pr-8">
       <div className="flex items-start gap-4 rounded-[14px] border border-[#efefef] px-5 py-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {commands?.map((c) => (
