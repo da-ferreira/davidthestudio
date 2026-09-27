@@ -104,6 +104,10 @@ export type Ticket = {
   // Nome de quem criou.
   author: string | null
   createdAt: string
+  // Soma das durações informadas nos eventos result; null enquanto não houver resultado.
+  durationMs: number | null
+  // Data do evento persistido mais recente; se não houver eventos, equivale a createdAt.
+  updatedAt: string
 }
 
 // sdd false: ticket rápido, começa direto na implementação.
