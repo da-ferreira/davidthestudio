@@ -123,5 +123,6 @@ if (!ticketCols.includes('stage')) db.exec("ALTER TABLE tickets ADD COLUMN stage
 if (!ticketCols.includes('agent')) db.exec("ALTER TABLE tickets ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude'")
 if (!ticketCols.includes('gates')) db.exec("ALTER TABLE tickets ADD COLUMN gates TEXT NOT NULL DEFAULT '[]'")
 if (!ticketCols.includes('created_by')) db.exec('ALTER TABLE tickets ADD COLUMN created_by TEXT REFERENCES users(id)')
+if (!ticketCols.includes('bases')) db.exec("ALTER TABLE tickets ADD COLUMN bases TEXT NOT NULL DEFAULT '{}'")
 const testCols = (db.prepare('PRAGMA table_info(test_runs)').all() as { name: string }[]).map((c) => c.name)
 if (!testCols.includes('tree')) db.exec('ALTER TABLE test_runs ADD COLUMN tree TEXT')

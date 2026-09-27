@@ -4,13 +4,12 @@ import { Check, GitBranch, TriangleAlert } from 'lucide-react'
 import type { AgentKind, Connections, DocStage, Ticket, WorkspaceDetail } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Topbar } from '@/components/topbar'
-import { MODELS } from '@/components/ticket-status'
+import { ModelSelect } from '@/components/model-select'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -135,23 +134,9 @@ export function NovoTicket() {
           <div className="flex flex-col gap-2">
             <Label>Modelo</Label>
             {agent === 'codex' ? (
-              <>
-                <Input placeholder="Padrão da conta" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="font-mono" />
-                <span className="text-[13px] text-muted-foreground">Vazio usa o modelo padrão da sua conta no Codex.</span>
-              </>
+              <ModelSelect key="codex" agent="codex" value={codexModel} onChange={setCodexModel} className="w-full" />
             ) : (
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODELS.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} className="w-full" />
             )}
           </div>
           <div className="flex flex-col gap-3">

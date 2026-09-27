@@ -4,7 +4,6 @@ import { ArrowUp, Square } from 'lucide-react'
 import type { AgentEvent, AgentKind, Connections, Conversation, ConversationStatus, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -19,7 +18,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Topbar } from '@/components/topbar'
 import { Markdown } from '@/components/markdown'
-import { MODELS, agentLabel } from '@/components/ticket-status'
+import { agentLabel } from '@/components/ticket-status'
+import { ModelSelect } from '@/components/model-select'
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
@@ -148,20 +148,9 @@ function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: st
             </SelectContent>
           </Select>
           {agent === 'codex' ? (
-            <Input placeholder="Modelo padrão da conta" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="h-8 w-[200px] font-mono text-[13px]" />
+            <ModelSelect key="codex" agent="codex" value={codexModel} onChange={setCodexModel} small className="w-[240px]" />
           ) : (
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger size="sm" className="w-[110px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} small className="w-[180px]" />
           )}
           <Button size="icon-sm" className="ml-auto rounded-full" disabled={!text.trim() || busy || disconnected} onClick={submit} aria-label="Perguntar">
             <ArrowUp />

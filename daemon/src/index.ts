@@ -99,6 +99,7 @@ app.post<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/login', async 
   await conn.startLogin(req.user, agent(req.params.agent))
   return conn.agentStatus(req.user, req.params.agent)
 })
+app.get<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/models', async (req) => conn.agentModels(req.user, agent(req.params.agent)))
 app.post<{ Body: { code: string } }>('/api/me/agents/claude/code', async (req) => {
   await conn.submitClaudeCode(req.user, req.body.code)
   return conn.agentStatus(req.user, 'claude')

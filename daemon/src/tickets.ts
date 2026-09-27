@@ -15,7 +15,8 @@ import { runTests, testableRepos, testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const TASKS_DIR = path.join(DATA_DIR, 'tasks')
-const MODELS = ['opus', 'sonnet', 'haiku']
+// A lista vem do agente (agentModels); aqui só barra o que não parece nome de modelo.
+const MODEL_ID = /^[\w.[\]-]+$/
 const DOC_STAGES: DocStage[] = ['spec', 'plan']
 // Pasta dos documentos dentro da pasta da tarefa; fora dos repos, não entra em commit.
 const DOCS_DIR = '.studio'
@@ -42,6 +43,8 @@ type Row = {
   gates: string
   prs: string
   diff: string | null
+  // repo -> commit de onde a worktree partiu
+  bases: string
   author: string | null
   created_at: string
 }
@@ -155,7 +158,7 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   const agent = input.agent ?? 'claude'
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
-  if (agent === 'claude' && !MODELS.includes(model)) throw new HttpError(400, 'Modelo inválido')
+  if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
   if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de criar o ticket`)
   const repos = [...new Set(input.repos ?? [])]
   if (!repos.length) throw new HttpError(400, 'Escolha ao menos um repositório')
@@ -176,12 +179,22 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   if (fs.existsSync(taskDir)) throw new HttpError(409, `A pasta ${taskDir} já existe`)
   fs.mkdirSync(taskDir, { recursive: true })
 
+  // Parte do origin atualizado, como um git pull antes de começar, sem mexer na pasta do repo.
+  let env: Record<string, string> = {}
+  try {
+    env = gitEnv(user)
+  } catch {}
   const created: string[] = []
+  const bases: Record<string, string> = {}
+  const warnings: string[] = []
   try {
     for (const name of repos) {
       const base = manifestRepos.find((r) => r.name === name)!.defaultBranch
-      await g.addWorktree(path.join(root, name), path.join(taskDir, name), branch, base)
+      const fresh = await g.freshBase(path.join(root, name), base, env)
+      if (fresh.error) warnings.push(`Não deu para atualizar ${name} do remote; o ticket partiu da cópia local de ${base}. ${fresh.error}`)
+      await g.addWorktree(path.join(root, name), path.join(taskDir, name), branch, fresh.ref)
       created.push(name)
+      bases[name] = await g.git(path.join(taskDir, name), ['rev-parse', 'HEAD'])
       await linkNodeModules(path.join(root, name), path.join(taskDir, name))
     }
   } catch (err) {
@@ -197,10 +210,11 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id)
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases))
 
+  for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
   const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
   record(id, { type: 'user', text: prompt })
@@ -477,6 +491,13 @@ function baseBranchOf(t: Ticket, repo: string) {
   return workspaceRepos(t.workspaceId).find((r) => r.name === repo)?.defaultBranch ?? 'main'
 }
 
+// Compara com o commit de onde o ticket partiu: se a base andar (inclusive com o merge do
+// próprio PR), o diff continua mostrando só o trabalho do ticket. Tickets antigos não têm.
+async function baseCommit(t: Ticket, repo: string, dir: string) {
+  const bases = JSON.parse(getRow(t.id).bases) as Record<string, string>
+  return bases[repo] ?? g.forkPoint(dir, baseBranchOf(t, repo))
+}
+
 export async function getDiff(id: string): Promise<RepoDiff[]> {
   const t = getTicket(id)
   const saved = getRow(id).diff
@@ -485,7 +506,7 @@ export async function getDiff(id: string): Promise<RepoDiff[]> {
     t.repos.map(async (repo) => {
       const dir = path.join(t.taskDir, repo)
       const baseBranch = baseBranchOf(t, repo)
-      const base = await g.forkPoint(dir, baseBranch)
+      const base = await baseCommit(t, repo, dir)
       const [files, uncommitted, commits, unpushed] = await Promise.all([
         g.worktreeDiff(dir, base),
         g.changedFiles(dir),
@@ -540,7 +561,7 @@ export async function openPrs(id: string, user: User) {
   for (const repo of t.repos) {
     const dir = path.join(t.taskDir, repo)
     const baseBranch = baseBranchOf(t, repo)
-    const base = await g.forkPoint(dir, baseBranch)
+    const base = await baseCommit(t, repo, dir)
     const unpushed = await g.unpushedCount(dir, t.branch, base)
     if (!(await g.commitsSince(dir, base)).length || (!unpushed && prs[repo])) continue
     if (!(await g.remoteUrl(dir))) throw new HttpError(400, `${repo} não tem remote origin`)

@@ -78,6 +78,9 @@ export type DocStage = 'spec' | 'plan'
 
 export type AgentKind = 'claude' | 'codex'
 
+// Modelo que a conta conectada oferece. No Codex, id vazio é o padrão da conta.
+export type AgentModel = { id: string; label: string }
+
 export type Ticket = {
   id: string
   workspaceId: string

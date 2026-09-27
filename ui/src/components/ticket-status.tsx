@@ -13,13 +13,8 @@ const STATUS: Record<TicketStatus, { label: string; className: string }> = {
   discarded: { label: 'Descartado', className: 'bg-neutral-100 text-neutral-500' },
 }
 
-export const MODELS = [
-  { id: 'opus', label: 'Opus' },
-  { id: 'sonnet', label: 'Sonnet' },
-  { id: 'haiku', label: 'Haiku' },
-]
-
-const modelLabel = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id
+// Apelidos do Claude ficam com maiúscula; ids de versão (claude-opus-5) aparecem como estão.
+const modelLabel = (id: string) => (/^[a-z]+$/.test(id) ? id[0].toUpperCase() + id.slice(1) : id)
 
 export const agentLabel = (t: Pick<Ticket, 'agent' | 'model'>) =>
   t.agent === 'codex' ? `Codex · ${t.model || 'padrão da conta'}` : `Claude Code · ${modelLabel(t.model)}`

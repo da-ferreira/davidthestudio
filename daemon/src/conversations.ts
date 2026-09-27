@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { AgentEvent, Conversation, ConversationStatus, NewConversation, TicketEvent, User } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
-import { agentStatus, claudeEnv, codexEnv } from './connections.ts'
+import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
 import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
@@ -13,7 +13,8 @@ import { emit, linkContext } from './tickets.ts'
 import { workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const DIR = path.join(DATA_DIR, 'conversations')
-const MODELS = ['opus', 'sonnet', 'haiku']
+// A lista vem do agente (agentModels); aqui só barra o que não parece nome de modelo.
+const MODEL_ID = /^[\w.[\]-]+$/
 
 type Row = {
   id: string
@@ -89,7 +90,7 @@ export async function createConversation(workspaceId: string, input: NewConversa
   const agent = input.agent ?? 'claude'
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
-  if (agent === 'claude' && !MODELS.includes(model)) throw new HttpError(400, 'Modelo inválido')
+  if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
   if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de perguntar`)
 
   const id = randomUUID()
@@ -111,15 +112,20 @@ export async function createConversation(workspaceId: string, input: NewConversa
   return getConversation(id)
 }
 
-// Cada repo entra como worktree destacada na branch padrão, sem arquivos fora do git (.env, node_modules).
-// Atualiza a cada pergunta, e repos acrescentados depois também entram.
+// Cada repo entra como worktree destacada na branch base atualizada do origin, sem arquivos fora do
+// git (.env, node_modules). Atualiza a cada pergunta, e repos acrescentados depois também entram.
 async function syncRepos(r: Row) {
   const root = workspaceRoot(r.workspace_id)
   const present = workspaceRepos(r.workspace_id).filter((repo) => fs.existsSync(path.join(root, repo.name, '.git')))
+  let env: Record<string, string> = {}
+  try {
+    env = gitEnv(owner(r))
+  } catch {}
   for (const repo of present) {
     const wt = path.join(r.dir, repo.name)
-    if (fs.existsSync(wt)) await g.git(wt, ['checkout', '-q', '--detach', repo.defaultBranch]).catch(() => {})
-    else await g.git(path.join(root, repo.name), ['worktree', 'add', '-q', '--detach', wt, repo.defaultBranch])
+    const { ref } = await g.freshBase(path.join(root, repo.name), repo.defaultBranch, env)
+    if (fs.existsSync(wt)) await g.git(wt, ['checkout', '-q', '--detach', ref]).catch(() => {})
+    else await g.git(path.join(root, repo.name), ['worktree', 'add', '-q', '--detach', wt, ref])
   }
   return present
 }

@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { AgentKind, AgentStatus, Connections, GithubStatus } from '@studio/shared'
+import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { AgentKind, AgentModel, AgentStatus, Connections, GithubStatus } from '@studio/shared'
 import { CONTAINERS, containerName, forwardKeys, homeMounts, spawnInContainer } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import { HttpError } from './http-error.ts'
@@ -203,6 +204,7 @@ export function cancelLogin(user: Owner, agent: AgentKind) {
 
 // A chave do Claude fica no studio e entra no ambiente do agente; a do Codex vai para o CODEX_HOME do usuário.
 export async function saveApiKey(user: Owner, agent: AgentKind, input: string) {
+  modelCache.delete(loginKey(user, agent))
   const key = input?.trim()
   if (!key) throw new HttpError(400, 'Cole a chave de API')
   if (agent === 'codex') {
@@ -222,6 +224,7 @@ export async function saveApiKey(user: Owner, agent: AgentKind, input: string) {
 
 // Sem a chave própria, o Claude volta para o login por assinatura (se houver).
 export async function logout(user: Owner, agent: AgentKind) {
+  modelCache.delete(loginKey(user, agent))
   if (agent === 'claude' && credential(user.id, 'anthropic')) return dropCredential(user.id, 'anthropic')
   if (agent === 'claude') await claudeCli(user, ['auth', 'logout'])
   else await codexCli(user, ['logout'])
@@ -245,4 +248,86 @@ export async function saveGithubToken(user: Owner, input: string) {
 
 export function removeGithubToken(user: Owner) {
   dropCredential(user.id, 'github')
+}
+
+// Perguntar ao agente custa subir a CLI (e o container); a lista quase nunca muda.
+const MODELS_TTL_MS = 10 * 60_000
+const modelCache = new Map<string, { at: number; models: AgentModel[] }>()
+
+export async function agentModels(user: Owner, agent: AgentKind): Promise<AgentModel[]> {
+  const key = loginKey(user, agent)
+  const hit = modelCache.get(key)
+  if (hit && Date.now() - hit.at < MODELS_TTL_MS) return hit.models
+  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new HttpError(502, 'O agente não respondeu a lista de modelos')), CONTAINERS ? 60_000 : 30_000).unref())
+  const models = await Promise.race([agent === 'claude' ? claudeModels(user) : codexModels(user), timeout])
+  modelCache.set(key, { at: Date.now(), models })
+  return models
+}
+
+async function claudeModels(user: Owner): Promise<AgentModel[]> {
+  const env = claudeEnv(user)
+  // Sessão sem prompt: só inicializa a CLI para responder a lista, e fecha.
+  async function* idle(): AsyncGenerator<SDKUserMessage> {
+    await new Promise(() => {})
+  }
+  const q = query({
+    prompt: idle(),
+    options: {
+      env,
+      spawnClaudeCodeProcess: CONTAINERS
+        ? (s) => {
+            const e = s.env as Env
+            const name = containerName('login', `${user.id}-claude-${Math.random().toString(36).slice(2, 8)}`)
+            const child = spawnInContainer({ name, cwd: '/home/agent', mounts: homeMounts(env), command: 'claude', args: s.args, env: e, envKeys: forwardKeys(e) })
+            s.signal.addEventListener('abort', () => child.kill(), { once: true })
+            return child
+          }
+        : undefined,
+    },
+  })
+  try {
+    const list = await q.supportedModels()
+    return list.map((m) => {
+      if (m.value !== 'default') return { id: m.value, label: m.displayName }
+      const same = list.find((o) => o.value !== 'default' && o.resolvedModel === m.resolvedModel)
+      return { id: m.value, label: same ? `Padrão (${same.displayName})` : 'Padrão' }
+    })
+  } finally {
+    q.close()
+  }
+}
+
+// O codex-sdk não lista modelos; o app-server da CLI sim (JSON-RPC, uma mensagem por linha).
+function codexModels(user: Owner): Promise<AgentModel[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawnCli(user, 'codex', ['app-server'])
+    let buf = ''
+    let err = ''
+    child.on('error', reject)
+    child.stderr!.on('data', (b) => (err += b))
+    child.on('close', () => reject(new HttpError(502, err.trim() || 'O Codex não respondeu a lista de modelos')))
+    child.stdout!.on('data', (b) => {
+      buf += b
+      let nl: number
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl)
+        buf = buf.slice(nl + 1)
+        let msg: { id?: number; result?: { data: { model: string; displayName: string; isDefault: boolean }[] }; error?: { message: string } }
+        try {
+          msg = JSON.parse(line)
+        } catch {
+          continue
+        }
+        if (msg.id !== 2) continue
+        child.kill()
+        if (!msg.result) return reject(new HttpError(502, msg.error?.message ?? 'O Codex recusou a lista de modelos'))
+        const def = msg.result.data.find((m) => m.isDefault)
+        resolve([{ id: '', label: def ? `Padrão da conta (${def.displayName})` : 'Padrão da conta' }, ...msg.result.data.map((m) => ({ id: m.model, label: m.displayName }))])
+      }
+    })
+    const send = (m: object) => child.stdin!.write(JSON.stringify(m) + '\n')
+    send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'studio', title: null, version: '0' }, capabilities: null } })
+    send({ method: 'initialized' })
+    send({ id: 2, method: 'model/list', params: { limit: 100 } })
+  })
 }

@@ -75,7 +75,22 @@ export async function branches(cwd: string): Promise<string[]> {
 }
 
 export async function addWorktree(repo: string, dir: string, branch: string, base: string) {
-  await git(repo, ['worktree', 'add', '-b', branch, dir, base])
+  await git(repo, ['worktree', 'add', '--no-track', '-b', branch, dir, base])
+}
+
+// Traz a branch do origin sem mexer na pasta do repo (só a referência origin/<branch> muda) e diz
+// de onde partir. Sem remote, ou se o fetch falhar, fica com o que já existe localmente.
+export async function freshBase(repo: string, branch: string, extraEnv: Record<string, string> = {}): Promise<{ ref: string; error: string | null }> {
+  let error: string | null = null
+  if (await remoteUrl(repo)) {
+    try {
+      await git(repo, ['fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], extraEnv)
+    } catch (err) {
+      error = (err as { stderr?: string }).stderr?.trim() || String(err)
+    }
+  }
+  const remote = await gitOrNull(repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`])
+  return { ref: remote ? `origin/${branch}` : branch, error }
 }
 
 export async function removeWorktree(repo: string, dir: string) {
