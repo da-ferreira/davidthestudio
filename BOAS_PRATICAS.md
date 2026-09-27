@@ -39,6 +39,10 @@ A troca é bloqueada enquanto houver ticket com worktree do repo ou mudanças n�
 
 Não precisa dar `git pull` na pasta do repo: cada ticket e cada pergunta busca a branch base no remote e parte do `origin/<base>` mais recente. A pasta do repo em si não é alterada. Se o fetch falhar (sem internet, token expirado), o ticket parte da última cópia conhecida e avisa no log.
 
+## Ticket sem saber os repositórios
+
+Com a spec ligada, dá para criar o ticket sem escolher repositório. O agente lê todos e lista na seção `## Repositórios` da spec os que vai alterar (um `- nome` por linha). Ao aprovar a spec, só esses continuam no ticket; para mudar a escolha, edite essa seção antes de aprovar. No ticket rápido (sem spec), escolha os repositórios.
+
 ## Antes de importar
 
 - Conecte o GitHub em **Conexões**. Repos privados e de organizações são clonados com o seu token (classic com escopo `repo` cobre repos de várias organizações; se a org usa SSO, autorize o token nela).

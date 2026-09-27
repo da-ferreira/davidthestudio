@@ -244,6 +244,7 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
         {ticket.status === 'approval' && (
           <p className="rounded-[12px] border border-amber-200 bg-amber-50/40 px-3.5 py-2.5 text-[13px]">
             {ticket.stage === 'spec' ? 'A spec está pronta' : 'O plano está pronto'}. Aprove na aba Spec e plano ou peça ajustes por aqui.
+            {ticket.stage === 'spec' && ticket.pickRepos && ' Ao aprovar, ficam só os repositórios da seção "Repositórios" da spec.'}
           </p>
         )}
         {ticket.status === 'running' && (

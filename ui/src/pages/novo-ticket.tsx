@@ -96,7 +96,11 @@ export function NovoTicket() {
                   )
                 })}
               <span className="text-[13px] text-muted-foreground">
-                {repos.length ? 'uma worktree por repositório escolhido' : 'escolha os repositórios afetados'}
+                {repos.length
+                  ? 'uma worktree por repositório escolhido'
+                  : sdd
+                    ? 'nenhum escolhido: o agente decide na spec'
+                    : 'escolha os repositórios afetados'}
               </span>
             </div>
           </div>
@@ -172,7 +176,7 @@ export function NovoTicket() {
             <Button variant="outline" size="lg" className="flex-1" onClick={() => navigate(`/w/${id}/tickets`)}>
               Cancelar
             </Button>
-            <Button size="lg" className="flex-[2]" disabled={!title.trim() || !repos.length || busy || (!!conn && !conn[agent].connected)} onClick={submit}>
+            <Button size="lg" className="flex-[2]" disabled={!title.trim() || (!repos.length && !sdd) || busy || (!!conn && !conn[agent].connected)} onClick={submit}>
               {busy ? 'Criando worktrees…' : 'Criar e iniciar'}
             </Button>
           </div>

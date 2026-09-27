@@ -45,6 +45,7 @@ type Row = {
   diff: string | null
   // repo -> commit de onde a worktree partiu
   bases: string
+  pick_repos: number
   author: string | null
   created_at: string
 }
@@ -55,6 +56,7 @@ const toTicket = (r: Row): Ticket => ({
   title: r.title,
   description: r.description,
   repos: JSON.parse(r.repos),
+  pickRepos: !!r.pick_repos,
   agent: r.agent,
   model: r.model,
   status: r.status,
@@ -160,10 +162,16 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
   if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
   if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de criar o ticket`)
-  const repos = [...new Set(input.repos ?? [])]
-  if (!repos.length) throw new HttpError(400, 'Escolha ao menos um repositório')
   const gates = DOC_STAGES.filter((st) => input.gates?.includes(st))
   const stage: Stage = input.sdd === false ? 'implement' : 'spec'
+  let repos = [...new Set(input.repos ?? [])]
+  // Sem repos escolhidos, o agente lê todos na spec e diz quais vai mexer; os outros saem ao aprovar.
+  const pick = !repos.length
+  if (pick) {
+    if (stage !== 'spec') throw new HttpError(400, 'Escolha os repositórios ou ligue a spec para o agente decidir')
+    repos = manifestRepos.filter((r) => fs.existsSync(path.join(root, r.name, '.git'))).map((r) => r.name)
+    if (!repos.length) throw new HttpError(400, 'O workspace não tem repositórios clonados')
+  }
   for (const name of repos) {
     const repo = manifestRepos.find((r) => r.name === name)
     if (!repo || !fs.existsSync(path.join(root, name, '.git'))) throw new HttpError(400, `Repositório ${name} não está disponível`)
@@ -210,9 +218,9 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases))
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases, pick_repos)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases), pick ? 1 : 0)
 
   for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
@@ -305,6 +313,14 @@ const STAGE_INSTRUCTIONS: Record<Stage, string> = {
   review: 'Etapa atual: Revisão. O humano está revisando o diff; faça só os ajustes que ele pedir.',
 }
 
+const PICK_REPOS = [
+  'Os repositórios deste ticket ainda não estão definidos: todos os do workspace estão na pasta para você ler.',
+  'Na spec, inclua uma seção "## Repositórios" listando, um por linha (- nome), só os que a implementação vai alterar.',
+  'Ao aprovar a spec, o studio tira os outros da pasta.',
+].join('\n')
+
+const stageInstructions = (t: Ticket) => [STAGE_INSTRUCTIONS[t.stage], ...(t.pickRepos && t.stage === 'spec' ? [PICK_REPOS] : [])].join('\n')
+
 // O Codex guarda as instruções da primeira etapa ao retomar a sessão e não aceita que uma mensagem as troque.
 // Por isso a instrução fixa só aponta para a etapa, que vai no começo de cada mensagem do studio.
 const CODEX_STAGES =
@@ -335,9 +351,9 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
     `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
     'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
     ...linkedNodeModules(t),
-    t.agent === 'codex' ? CODEX_STAGES : STAGE_INSTRUCTIONS[t.stage],
+    t.agent === 'codex' ? CODEX_STAGES : stageInstructions(t),
   ].join('\n')
-  const stage = [STAGE_INSTRUCTIONS[t.stage], ...(t.stage === 'spec' ? [CODEX_DOUBTS] : [])].join('\n')
+  const stage = [stageInstructions(t), ...(t.stage === 'spec' ? [CODEX_DOUBTS] : [])].join('\n')
   setStatus(t.id, 'running')
 
   let ok = false
@@ -420,6 +436,17 @@ function afterTurn(t: Ticket) {
   if (isDocStage(t.stage)) {
     if (!fs.existsSync(docPath(t, t.stage))) return setStatus(t.id, 'done')
     if (t.gates.includes(t.stage)) return setStatus(t.id, 'approval')
+    if (t.stage === 'spec' && t.pickRepos)
+      return narrowRepos(t).then(
+        (repos) => {
+          record(t.id, { type: 'note', text: `${DOC.spec.name} ${DOC.spec.ready}; segue sem aprovação, como configurado no ticket` })
+          advance(getTicket(t.id), false, repos)
+        },
+        (err) => {
+          record(t.id, { type: 'note', text: (err as Error).message })
+          setStatus(t.id, 'approval')
+        },
+      )
     record(t.id, { type: 'note', text: `${DOC[t.stage].name} ${DOC[t.stage].ready}; segue sem aprovação, como configurado no ticket` })
     return advance(t, false)
   }
@@ -429,15 +456,17 @@ function afterTurn(t: Ticket) {
   if (testableRepos(t).length) runTests(t.id)
 }
 
-function advance(t: Ticket, approved: boolean) {
+// picked: repos que ficaram depois da spec; o agente precisa saber que os outros saíram da pasta.
+function advance(t: Ticket, approved: boolean, picked?: string[]) {
   const from = t.stage as DocStage
   const to: Stage = from === 'spec' ? 'plan' : 'implement'
   saveDocs(t)
   setStage(t.id, to)
   const done = approved ? `foi ${DOC[from].approved}` : `está ${DOC[from].ready}`
+  const repos = picked ? ` Os repositórios do ticket agora são só ${picked.map((r) => `${r}/`).join(', ')}; os outros saíram da pasta.` : ''
   const text =
     from === 'spec'
-      ? `A spec ${done}. Agora escreva o plano em ${DOCS_DIR}/plan.md, com cada passo numa linha - [ ].`
+      ? `A spec ${done}.${repos} Agora escreva o plano em ${DOCS_DIR}/plan.md, com cada passo numa linha - [ ].`
       : `O plano ${done}. Pode implementar, dentro das pastas dos repositórios, marcando - [x] em cada passo concluído.`
   record(t.id, { type: 'user', text })
   run(getTicket(t.id), text, t.sessionId)
@@ -447,14 +476,48 @@ function assertDocStage(stage: string): asserts stage is DocStage {
   if (!DOC_STAGES.includes(stage as DocStage)) throw new HttpError(400, 'Etapa inválida')
 }
 
-export function approveDoc(id: string, stage: DocStage) {
+export async function approveDoc(id: string, stage: DocStage) {
   assertDocStage(stage)
   const t = getTicket(id)
   assertIdle(t)
   if (t.stage !== stage) throw new HttpError(409, `O ticket não está na etapa de ${DOC[stage].name}`)
   if (!fs.existsSync(docPath(t, stage))) throw new HttpError(409, `O agente ainda não escreveu ${DOC[stage].the}`)
+  const picked = stage === 'spec' && t.pickRepos ? await narrowRepos(t) : undefined
   record(id, { type: 'note', text: `${DOC[stage].name} ${DOC[stage].approved}; cópia salva em specs/ na raiz do workspace` })
-  advance(t, true)
+  advance(getTicket(id), true, picked)
+}
+
+// Lê a seção "Repositórios" da spec: linhas "- nome" com nomes dos repos do ticket.
+function specRepos(spec: string, candidates: string[]) {
+  const lines = spec.split('\n')
+  const start = lines.findIndex((l) => /^#+\s*reposit[óo]rios\b/i.test(l.trim()))
+  if (start < 0) return []
+  const found = new Set<string>()
+  for (const line of lines.slice(start + 1)) {
+    if (/^#+\s/.test(line.trim())) break
+    const item = line.match(/^\s*(?:[-*]|\d+\.)\s+(?:\[.\]\s+)?(\S+)/)?.[1].replace(/[`*:,]/g, '').replace(/\/$/, '')
+    if (item && candidates.includes(item)) found.add(item)
+  }
+  return candidates.filter((r) => found.has(r))
+}
+
+// Fica só com os repos que a spec escolheu: os outros perdem a worktree e a branch (ainda sem commits).
+async function narrowRepos(t: Ticket) {
+  const spec = fs.existsSync(docPath(t, 'spec')) ? fs.readFileSync(docPath(t, 'spec'), 'utf8') : ''
+  const chosen = specRepos(spec, t.repos)
+  if (!chosen.length)
+    throw new HttpError(409, `A spec não diz quais repositórios mudar. Edite a seção "## Repositórios" (um "- nome" por linha, entre: ${t.repos.join(', ')}) ou peça ajuste ao agente.`)
+  const root = workspaceRoot(t.workspaceId)
+  const bases = JSON.parse(getRow(t.id).bases) as Record<string, string>
+  for (const repo of t.repos.filter((r) => !chosen.includes(r))) {
+    await g.removeWorktree(path.join(root, repo), path.join(t.taskDir, repo))
+    await g.git(path.join(root, repo), ['branch', '-D', t.branch]).catch(() => {})
+    delete bases[repo]
+  }
+  db.prepare('UPDATE tickets SET repos = ?, bases = ?, pick_repos = 0 WHERE id = ?').run(JSON.stringify(chosen), JSON.stringify(bases), t.id)
+  record(t.id, { type: 'note', text: `repositórios do ticket, pela spec: ${chosen.join(', ')}` })
+  emit(t.id, { kind: 'ticket', ticket: getTicket(t.id) })
+  return chosen
 }
 
 export function getDocs(id: string): TicketDocs {

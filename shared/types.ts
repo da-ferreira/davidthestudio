@@ -87,6 +87,8 @@ export type Ticket = {
   title: string
   description: string
   repos: string[]
+  // O agente escolhe os repos na spec; até a aprovação, repos são todos os do workspace.
+  pickRepos: boolean
   agent: AgentKind
   // No Codex, vazio é o modelo padrão da conta.
   model: string
@@ -105,6 +107,7 @@ export type Ticket = {
 }
 
 // sdd false: ticket rápido, começa direto na implementação.
+// repos vazio (só com spec): o agente decide.
 export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[] }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.

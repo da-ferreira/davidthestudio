@@ -81,7 +81,7 @@ export function Tickets() {
                       <Link to={`/w/${id}/tickets/${t.id}`}>{t.id}</Link>
                     </TableCell>
                     <TableCell className="font-medium">{t.title}</TableCell>
-                    <TableCell className="text-muted-foreground">{t.repos.join(', ')}</TableCell>
+                    <TableCell className="text-muted-foreground">{t.pickRepos ? 'o agente escolhe' : t.repos.join(', ')}</TableCell>
                     <TableCell className="text-muted-foreground">{t.author ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground">{agentLabel(t)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{Object.keys(t.prs).length || '—'}</TableCell>

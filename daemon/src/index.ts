@@ -198,7 +198,7 @@ app.put<{ Params: { id: string; stage: DocStage }; Body: { content: string } }>(
   return tickets.getDocs(req.params.id)
 })
 app.post<{ Params: { id: string }; Body: { stage: DocStage } }>('/api/tickets/:id/approve', async (req) => {
-  tickets.approveDoc(req.params.id, req.body.stage)
+  await tickets.approveDoc(req.params.id, req.body.stage)
   return tickets.getTicket(req.params.id)
 })
 app.get<{ Params: { id: string } }>('/api/tickets/:id/diff', async (req) => tickets.getDiff(req.params.id))
