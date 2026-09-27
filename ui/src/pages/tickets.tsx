@@ -29,6 +29,17 @@ const norm = (s: string) =>
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
 
+const durationLabel = (milliseconds: number | null) => {
+  if (milliseconds === null) return '—'
+  const seconds = Math.round(milliseconds / 1000)
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainder = seconds % 60
+  if (hours) return `${hours}h ${minutes}min`
+  if (minutes) return remainder ? `${minutes}min ${remainder}s` : `${minutes}min`
+  return `${seconds}s`
+}
+
 export function Tickets() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -177,6 +188,8 @@ export function Tickets() {
                   <TableHead>Etapa</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Criado</TableHead>
+                  <TableHead>Duração</TableHead>
+                  <TableHead>Última atualização</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -199,6 +212,8 @@ export function Tickets() {
                       <TicketStatusBadge status={t.status} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">{new Date(t.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{durationLabel(t.durationMs)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(t.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

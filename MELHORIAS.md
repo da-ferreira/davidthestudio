@@ -4,8 +4,9 @@ Ideias que ficaram de fora do escopo de cada etapa. Nada aqui está combinado; a
 
 ## Tickets
 
-- **Colunas de duração e última atualização** na lista.
+- **Fazer merge do PR pela tela do ticket.** Hoje o merge é feito no GitHub. Um botão “Fazer merge” no ticket mostraria o estado do PR (checks do CI, conflitos e aprovações) e faria o merge com `gh pr merge` quando a pessoa clicar; depois fecharia o ticket e apagaria a branch e a worktree. A decisão continua humana: o agente não aprova nem faz merge sozinho, e a proteção de branch do GitHub continua valendo. Auto-merge “quando os checks passarem” só depois do executor de testes e com CI confiável, ligado por ticket.
 - **Atualizar um ticket aberto com a base.** O ticket parte do origin atualizado na criação, mas não acompanha o que entra na base depois. Um botão "Atualizar com a base" faria rebase/merge da branch do ticket no `origin/<base>`.
+- **Atualizar o contexto de uma conversa em “Perguntar”.** Se o workspace/repositório for atualizado durante uma conversa, uma nova pergunta na mesma sessão deve considerar o código novo, sem exigir que a pessoa crie outra conversa.
 
 ## Conexões
 

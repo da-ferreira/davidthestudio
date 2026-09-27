@@ -50,7 +50,9 @@ type Row = {
   created_at: string
 }
 
-const toTicket = (r: Row): Ticket => ({
+type EventSummary = { durationMs: number | null; updatedAt: string }
+
+const toTicket = (r: Row, summary: EventSummary): Ticket => ({
   id: r.id,
   workspaceId: r.workspace_id,
   title: r.title,
@@ -68,6 +70,8 @@ const toTicket = (r: Row): Ticket => ({
   prs: JSON.parse(r.prs),
   author: r.author,
   createdAt: r.created_at,
+  durationMs: summary.durationMs,
+  updatedAt: summary.updatedAt,
 })
 
 const SELECT = 'SELECT t.*, u.name AS author FROM tickets t LEFT JOIN users u ON u.id = t.created_by'
@@ -101,11 +105,38 @@ function getRow(id: string): Row {
 
 export function listTickets(workspaceId: string): Ticket[] {
   const rows = db.prepare(`${SELECT} WHERE t.workspace_id = ? ORDER BY t.num DESC`).all(workspaceId) as Row[]
-  return rows.map(toTicket)
+  const createdAt = new Map(rows.map((row) => [row.id, row.created_at]))
+  const summaries = new Map<string, EventSummary>()
+  const eventRows = db.prepare(
+    'SELECT e.ticket_id, e.at, e.data FROM events e JOIN tickets t ON t.id = e.ticket_id WHERE t.workspace_id = ? ORDER BY e.ticket_id, e.seq',
+  ).all(workspaceId) as { ticket_id: string; at: string; data: string }[]
+  for (const event of eventRows) {
+    const summary = summaries.get(event.ticket_id) ?? {
+      durationMs: null,
+      updatedAt: createdAt.get(event.ticket_id) ?? event.at,
+    }
+    if (event.at > summary.updatedAt) summary.updatedAt = event.at
+    const parsed = JSON.parse(event.data) as AgentEvent
+    if (parsed.type === 'result' && Number.isFinite(parsed.durationMs)) {
+      summary.durationMs = (summary.durationMs ?? 0) + parsed.durationMs
+    }
+    summaries.set(event.ticket_id, summary)
+  }
+  return rows.map((row) => toTicket(row, summaries.get(row.id) ?? { durationMs: null, updatedAt: row.created_at }))
 }
 
 export function getTicket(id: string): Ticket {
-  return toTicket(getRow(id))
+  const row = getRow(id)
+  const events = db.prepare('SELECT at, data FROM events WHERE ticket_id = ? ORDER BY seq').all(id) as { at: string; data: string }[]
+  const summary: EventSummary = { durationMs: null, updatedAt: row.created_at }
+  for (const event of events) {
+    if (event.at > summary.updatedAt) summary.updatedAt = event.at
+    const parsed = JSON.parse(event.data) as AgentEvent
+    if (parsed.type === 'result' && Number.isFinite(parsed.durationMs)) {
+      summary.durationMs = (summary.durationMs ?? 0) + parsed.durationMs
+    }
+  }
+  return toTicket(row, summary)
 }
 
 export function listEvents(id: string): TicketEvent[] {
