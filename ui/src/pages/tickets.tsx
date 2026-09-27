@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Search } from 'lucide-react'
 import type { Ticket, TicketStatus, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -17,20 +19,58 @@ const FILTERS: { id: string; label: string; statuses: TicketStatus[] | null }[] 
   { id: 'encerrados', label: 'Encerrados', statuses: ['closed', 'discarded'] },
 ]
 
+// Sem acento e sem caixa: "migracao" encontra "Migração".
+const norm = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+
 export function Tickets() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [ws, setWs] = useState<Workspace | null>(null)
   const [items, setItems] = useState<Ticket[] | null>(null)
   const [params, setParams] = useSearchParams()
+  const searchRef = useRef<HTMLInputElement>(null)
   const filter = FILTERS.find((f) => f.id === params.get('status')) ?? FILTERS[0]
-  const count = (f: (typeof FILTERS)[number]) => items?.filter((t) => !f.statuses || f.statuses.includes(t.status)).length ?? 0
-  const shown = items?.filter((t) => !filter.statuses || filter.statuses.includes(t.status))
+  const q = params.get('q') ?? ''
+  const term = norm(q)
+  const matches = (t: Ticket) => !term || norm(t.title).includes(term) || norm(t.id).includes(term)
+  const count = (f: (typeof FILTERS)[number]) =>
+    items?.filter((t) => (!f.statuses || f.statuses.includes(t.status)) && matches(t)).length ?? 0
+  const shown = items?.filter((t) => (!filter.statuses || filter.statuses.includes(t.status)) && matches(t))
+
+  // Muda só uma chave para a aba e a busca não se apagarem uma à outra.
+  const setParam = (key: string, value: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: true },
+    )
 
   useEffect(() => {
     api<Workspace[]>('/workspaces').then((all) => setWs(all.find((w) => w.id === id) ?? null))
     api<Ticket[]>(`/workspaces/${id}/tickets`).then(setItems)
   }, [id])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
+      if (!searchRef.current) return
+      e.preventDefault()
+      searchRef.current.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const novo = <Button onClick={() => navigate(`/w/${id}/tickets/novo`)}>Novo ticket</Button>
 
@@ -47,18 +87,41 @@ export function Tickets() {
           </div>
         )}
         {!!items?.length && (
-          <Tabs value={filter.id} onValueChange={(v) => setParams(v === 'todos' ? {} : { status: v }, { replace: true })}>
-            <TabsList>
-              {FILTERS.map((f) => (
-                <TabsTrigger key={f.id} value={f.id}>
-                  {f.label}
-                  <span className="text-muted-foreground">{count(f)}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-col gap-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchRef}
+                placeholder="Buscar tickets…"
+                aria-label="Buscar tickets por título ou ID"
+                className="h-10 rounded-[10px] pr-10 pl-9"
+                value={q}
+                onChange={(e) => setParam('q', e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape') return
+                  if (q) setParam('q', '')
+                  else e.currentTarget.blur()
+                }}
+              />
+              <kbd className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded-[5px] border bg-background px-[5px] font-sans text-[10.5px] leading-[17px] text-muted-foreground">
+                /
+              </kbd>
+            </div>
+            <Tabs value={filter.id} onValueChange={(v) => setParam('status', v === 'todos' ? '' : v)}>
+              <TabsList>
+                {FILTERS.map((f) => (
+                  <TabsTrigger key={f.id} value={f.id}>
+                    {f.label}
+                    <span className="text-muted-foreground">{count(f)}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
         )}
-        {!!items?.length && shown?.length === 0 && <p className="text-muted-foreground">Nenhum ticket neste filtro.</p>}
+        {!!items?.length && shown?.length === 0 && (
+          <p className="text-muted-foreground">{term ? `Nenhum ticket encontrado para "${q.trim()}".` : 'Nenhum ticket neste filtro.'}</p>
+        )}
         {!!shown?.length && (
           <div className="rounded-xl border">
             <Table>
