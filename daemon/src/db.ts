@@ -107,6 +107,18 @@ db.exec(`
     data TEXT NOT NULL,
     PRIMARY KEY (conversation_id, seq)
   );
+  CREATE TABLE IF NOT EXISTS improvements (
+    num INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    ticket_id TEXT,
+    created_by TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
   CREATE TABLE IF NOT EXISTS repo_envs (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     repo TEXT NOT NULL,

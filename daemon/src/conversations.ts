@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, Conversation, ConversationStatus, NewConversation, TicketEvent, User } from '@studio/shared'
+import type { AgentEvent, Conversation, ConversationStatus, NewConversation, NewTicket, TicketEvent, TicketProposal, User } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
@@ -9,7 +9,9 @@ import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
-import { emit, linkContext } from './tickets.ts'
+import { updateImprovement } from './improvements.ts'
+import { BRIDGE, SERVER, serveTools, type ToolServer } from './studio-tools.ts'
+import { createTicket, emit, linkContext } from './tickets.ts'
 import { workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const DIR = path.join(DATA_DIR, 'conversations')
@@ -50,6 +52,7 @@ const sessions = new Map<string, claude.Session>()
 const stopping = new Set<string>()
 // Mensagens que chegaram enquanto a sessão encerrava; viram a próxima pergunta logo em seguida.
 const pending = new Map<string, string[]>()
+const resolving = new Set<string>()
 
 function getRow(id: string): Row {
   const row = db.prepare(`${SELECT} WHERE c.id = ?`).get(id) as Row | undefined
@@ -86,12 +89,12 @@ function setStatus(id: string, status: ConversationStatus, sessionId?: string) {
 export async function createConversation(workspaceId: string, input: NewConversation, user: User): Promise<Conversation> {
   const root = workspaceRoot(workspaceId)
   const text = input.text?.trim()
-  if (!text) throw new HttpError(400, 'Escreva a pergunta')
+  if (!text) throw new HttpError(400, 'Escreva a mensagem')
   const agent = input.agent ?? 'claude'
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
   if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
-  if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de perguntar`)
+  if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de conversar`)
 
   const id = randomUUID()
   const dir = path.join(DIR, id)
@@ -139,13 +142,24 @@ async function run(r: Row, prompt: string) {
   setStatus(r.id, 'running')
   let ok = false
   let session: claude.Session
+  let tools: ToolServer | undefined
   try {
     const repos = await syncRepos(r)
     const instructions = [
-      'Você está respondendo perguntas sobre este workspace no modo Perguntar do david the studio.',
+      'Você está conversando sobre este workspace no modo Conversar do david the studio.',
       `Os repositórios são as subpastas ${repos.map((repo) => `${repo.name}/ (branch ${repo.defaultBranch})`).join(', ')} da pasta atual.`,
-      'Só leia: não edite arquivos, não crie arquivos e não rode comandos que mudem algo. Responda com base no código e no contexto do workspace.',
+      'Não edite arquivos, não crie arquivos e não rode comandos que mudem algo. Responda com base no código e no contexto do workspace.',
+      `As únicas ações permitidas são as ferramentas do servidor "${SERVER}": manter a lista de melhorias do workspace (listar, criar, editar, apagar) e propor tickets.`,
+      'Quando a pessoa pedir um ticket, use propor_ticket: ele mostra um cartão que a pessoa revisa e confirma; não diga que o ticket foi criado.',
+      'Para citar uma melhoria existente, pegue o id em listar_melhorias; nunca invente ids.',
     ].join('\n')
+    tools = await serveTools(r.id, {
+      workspaceId: r.workspace_id,
+      userId: r.created_by,
+      onProposal: (proposal) => record(r.id, { type: 'proposal', id: randomUUID(), proposal }),
+    })
+    // Dentro do container o node é o da imagem; a ponte e o socket entram montados no mesmo caminho.
+    const mcp = { command: CONTAINERS ? 'node' : process.execPath, args: [BRIDGE, tools.socket] }
     const common = {
       cwd: r.dir,
       prompt,
@@ -153,6 +167,7 @@ async function run(r: Row, prompt: string) {
       instructions,
       resume: r.session_id,
       readOnly: true,
+      mcp,
       onEvent: (e: AgentEvent) => {
         if (e.type === 'result' && stopping.has(r.id)) e = { ...e, ok: false, error: 'parado por você' }
         record(r.id, e)
@@ -163,13 +178,22 @@ async function run(r: Row, prompt: string) {
     const env = r.agent === 'codex' ? codexEnv(owner(r)) : claudeEnv(owner(r))
     const names = repos.map((repo) => repo.name)
     const container = CONTAINERS
-      ? { name: containerName('conv', r.id), mounts: [...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false), ...homeMounts(env)] }
+      ? {
+          name: containerName('conv', r.id),
+          mounts: [
+            ...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false),
+            ...homeMounts(env),
+            { path: BRIDGE, readOnly: true },
+            { path: tools.socket },
+          ],
+        }
       : undefined
     session =
       r.agent === 'codex'
         ? codex.start({ ...common, env, container, secretDirs: [workspaceRoot(r.workspace_id), r.dir] })
         : claude.start({ ...common, env, container })
   } catch (err) {
+    tools?.close()
     record(r.id, { type: 'result', ok: false, durationMs: 0, turns: 0, error: String((err as Error)?.message ?? err) })
     return setStatus(r.id, 'error')
   }
@@ -180,6 +204,7 @@ async function run(r: Row, prompt: string) {
       ok = false
     })
     .then(() => {
+      tools?.close()
       sessions.delete(r.id)
       const next = pending.get(r.id)
       pending.delete(r.id)
@@ -205,6 +230,35 @@ export function sendMessage(id: string, input: string, user: User) {
   if (s?.send(text)) return
   if (s) pending.set(id, [...(pending.get(id) ?? []), text])
   else run(r, text)
+}
+
+// Cartão de ticket proposto pelo agente: cria (input) ou descarta (null). Uma vez só por proposta.
+export async function resolveProposal(id: string, proposalId: string, input: NewTicket | null, user: User): Promise<string | null> {
+  const r = getRow(id)
+  if (r.created_by !== user.id) throw new HttpError(403, 'Só quem abriu a conversa pode criar o ticket')
+  const events = listEvents(id).map((e) => e.event)
+  const proposal = events.find((e): e is { type: 'proposal'; id: string; proposal: TicketProposal } => e.type === 'proposal' && e.id === proposalId)
+  if (!proposal) throw new HttpError(404, 'Proposta não encontrada')
+  if (events.some((e) => e.type === 'proposal_done' && e.id === proposalId) || resolving.has(proposalId)) throw new HttpError(409, 'Esta proposta já foi resolvida')
+  if (!input) {
+    record(id, { type: 'proposal_done', id: proposalId })
+    return null
+  }
+  // createTicket é assíncrono; a trava evita dois cliques criarem dois tickets.
+  resolving.add(proposalId)
+  try {
+    const ticket = await createTicket(r.workspace_id, input, user)
+    const improvementId = proposal.proposal.improvementId
+    if (improvementId) {
+      try {
+        updateImprovement(r.workspace_id, improvementId, { status: 'ticket', ticketId: ticket.id })
+      } catch {}
+    }
+    record(id, { type: 'proposal_done', id: proposalId, ticketId: ticket.id })
+    return ticket.id
+  } finally {
+    resolving.delete(proposalId)
+  }
 }
 
 export async function stopConversation(id: string) {

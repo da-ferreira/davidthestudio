@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ArrowUp, Square } from 'lucide-react'
-import type { AgentEvent, AgentKind, Connections, Conversation, ConversationStatus, TicketEvent, Workspace, WsMessage } from '@studio/shared'
+import { ArrowUp, Square, TicketPlus } from 'lucide-react'
+import type { AgentEvent, AgentKind, Connections, Conversation, ConversationStatus, TicketEvent, TicketProposal, Workspace, WorkspaceDetail, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -20,6 +20,7 @@ import { Topbar } from '@/components/topbar'
 import { Markdown } from '@/components/markdown'
 import { agentLabel } from '@/components/ticket-status'
 import { ModelSelect } from '@/components/model-select'
+import { TicketForm } from '@/components/ticket-form'
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
@@ -33,7 +34,7 @@ const STATUS: Record<ConversationStatus, { label: string; className: string } | 
 
 const date = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
-export function Perguntar() {
+export function Conversar() {
   const { id, conversationId } = useParams()
   const [ws, setWs] = useState<Workspace | null>(null)
   const [list, setList] = useState<Conversation[]>([])
@@ -49,11 +50,11 @@ export function Perguntar() {
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <Topbar
-        crumbs={[ws?.name ?? '…', 'Perguntar']}
+        crumbs={[ws?.name ?? '…', 'Conversar']}
         actions={
           conversationId && (
             <Button asChild variant="outline">
-              <Link to={`/w/${id}/perguntar`}>Nova pergunta</Link>
+              <Link to={`/w/${id}/conversar`}>Nova conversa</Link>
             </Button>
           )
         }
@@ -64,7 +65,7 @@ export function Perguntar() {
           {list.map((c) => (
             <Link
               key={c.id}
-              to={`/w/${id}/perguntar/${c.id}`}
+              to={`/w/${id}/conversar/${c.id}`}
               className={cn('flex flex-col gap-0.5 rounded-[10px] px-3 py-2 hover:bg-surface-2', c.id === conversationId && 'bg-accent hover:bg-accent')}
             >
               <span className="truncate text-[14px]">{c.title}</span>
@@ -78,14 +79,14 @@ export function Perguntar() {
         {conversationId ? (
           <Chat key={conversationId} conversationId={conversationId} workspaceId={id!} onUpdate={upsert} onDelete={remove} />
         ) : (
-          <NewQuestion workspaceId={id!} workspaceName={ws?.name} onCreate={upsert} />
+          <NewConversation workspaceId={id!} workspaceName={ws?.name} onCreate={upsert} />
         )}
       </div>
     </div>
   )
 }
 
-function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: string; workspaceName?: string; onCreate: (c: Conversation) => void }) {
+function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId: string; workspaceName?: string; onCreate: (c: Conversation) => void }) {
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [agent, setAgent] = useState<AgentKind>('claude')
@@ -110,7 +111,7 @@ function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: st
         body: { text, agent, model: agent === 'codex' ? codexModel : model },
       })
       onCreate(c)
-      navigate(`/w/${workspaceId}/perguntar/${c.id}`)
+      navigate(`/w/${workspaceId}/conversar/${c.id}`)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falhou')
       setBusy(false)
@@ -120,8 +121,8 @@ function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: st
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center gap-6 overflow-auto px-10 py-10">
       <div className="flex flex-col items-center gap-1.5 text-center">
-        <h1 className="text-[28px] font-medium tracking-[-0.025em]">O que você quer saber sobre {workspaceName ?? '…'}?</h1>
-        <span className="text-muted-foreground">O agente lê os repositórios na branch padrão e o contexto do workspace. Não muda nada.</span>
+        <h1 className="text-[28px] font-medium tracking-[-0.025em]">Sobre o que vamos conversar em {workspaceName ?? '…'}?</h1>
+        <span className="text-muted-foreground">O agente lê os repositórios na branch padrão e o contexto do workspace. Não mexe no código: só anota melhorias e propõe tickets.</span>
       </div>
       <div className="flex w-full max-w-[720px] flex-col gap-3 rounded-[22px] border bg-card p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
         <Textarea
@@ -152,7 +153,7 @@ function NewQuestion({ workspaceId, workspaceName, onCreate }: { workspaceId: st
           ) : (
             <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} small className="w-[180px]" />
           )}
-          <Button size="icon-sm" className="ml-auto rounded-full" disabled={!text.trim() || busy || disconnected} onClick={submit} aria-label="Perguntar">
+          <Button size="icon-sm" className="ml-auto rounded-full" disabled={!text.trim() || busy || disconnected} onClick={submit} aria-label="Enviar">
             <ArrowUp />
           </Button>
         </div>
@@ -187,7 +188,12 @@ function Chat({
   const [events, setEvents] = useState<TicketEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [ws, setWs] = useState<WorkspaceDetail | null>(null)
   const end = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    api<WorkspaceDetail>(`/workspaces/${workspaceId}`).then(setWs)
+  }, [workspaceId])
 
   useEffect(() => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -212,11 +218,13 @@ function Chat({
   if (!c) return <div className="flex-1" />
 
   const status = STATUS[c.status]
+  // Proposta resolvida: id -> ticket criado (null quando descartada).
+  const done = new Map(events.flatMap(({ event: e }) => (e.type === 'proposal_done' ? [[e.id, e.ticketId ?? null] as const] : [])))
   const canDelete = c.authorId === user.id || user.admin
   const del = () =>
     api(`/conversations/${c.id}`, { method: 'DELETE' }).then(() => {
       onDelete(c.id)
-      navigate(`/w/${workspaceId}/perguntar`)
+      navigate(`/w/${workspaceId}/conversar`)
     })
 
   return (
@@ -244,7 +252,19 @@ function Chat({
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-6">
           {events.map(({ seq, event }) => (
-            <Message key={seq} event={event} strip={(s) => s.replace(new RegExp(`\\S*/conversations/${c.id}/`, 'g'), '')} />
+            event.type === 'proposal' ? (
+              <ProposalCard
+                key={seq}
+                conversation={c}
+                workspace={ws}
+                proposalId={event.id}
+                proposal={event.proposal}
+                done={done.has(event.id) ? { ticketId: done.get(event.id)! } : null}
+                mine={c.authorId === user.id}
+              />
+            ) : (
+              <Message key={seq} event={event} strip={(s) => s.replace(new RegExp(`\\S*/conversations/${c.id}/`, 'g'), '')} />
+            )
           ))}
           {c.status === 'running' && (
             <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
@@ -287,6 +307,9 @@ function Message({ event, strip }: { event: AgentEvent; strip: (s: string) => st
     )
   if (event.type === 'text') return <Markdown text={event.text} className="text-body" />
   if (event.type === 'tool') {
+    const studio = studioTool(event.name)
+    if (studio === 'propor_ticket') return null
+    if (studio) return <span className="truncate text-[12px] text-faint">{studioLabel(studio, event.input)}</span>
     const i = event.input
     const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
     const detail = s('file_path') || s('pattern') || s('command') || s('query') || s('url')
@@ -298,6 +321,86 @@ function Message({ event, strip }: { event: AgentEvent; strip: (s: string) => st
   }
   if (event.type === 'result' && !event.ok) return <span className="text-[13px] text-destructive">✗ {event.error ?? 'falhou'}</span>
   return null
+}
+
+// Ferramentas do servidor MCP do studio: mcp__studio__x no Claude, studio.x no Codex.
+function studioTool(name: string) {
+  return name.match(/^(?:mcp__studio__|studio\.)(\w+)$/)?.[1] ?? null
+}
+
+function studioLabel(tool: string, input: Record<string, unknown>) {
+  const title = typeof input.titulo === 'string' ? `: ${input.titulo}` : ''
+  if (tool === 'listar_melhorias') return 'leu a lista de melhorias'
+  if (tool === 'criar_melhoria') return `criou melhoria${title}`
+  if (tool === 'editar_melhoria') return `editou melhoria${title}${typeof input.status === 'string' ? ` (${input.status})` : ''}`
+  if (tool === 'apagar_melhoria') return 'apagou uma melhoria'
+  return tool
+}
+
+function ProposalCard({
+  conversation,
+  workspace,
+  proposalId,
+  proposal,
+  done,
+  mine,
+}: {
+  conversation: Conversation
+  workspace: WorkspaceDetail | null
+  proposalId: string
+  proposal: TicketProposal
+  done: { ticketId: string | null } | null
+  mine: boolean
+}) {
+  const [discarding, setDiscarding] = useState(false)
+  const resolve = (ticket?: object) =>
+    api<{ ticketId: string | null }>(`/conversations/${conversation.id}/proposals/${proposalId}`, { method: 'POST', body: { ticket } })
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[16px] border bg-surface-2 p-4">
+      <div className="flex items-center gap-2 text-[14px] font-medium">
+        <TicketPlus className="size-4" />
+        Ticket proposto
+        {done && (
+          <span className="ml-auto text-[13px] font-normal text-muted-foreground">
+            {done.ticketId ? (
+              <Link to={`/w/${conversation.workspaceId}/tickets/${done.ticketId}`} className="underline">
+                Ticket {done.ticketId} criado
+              </Link>
+            ) : (
+              'Descartado'
+            )}
+          </span>
+        )}
+      </div>
+      {done ? (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{proposal.title}</span>
+          {proposal.description && <Markdown text={proposal.description} className="text-[14px] text-muted-foreground" />}
+        </div>
+      ) : (
+        <>
+          <TicketForm
+            workspace={workspace}
+            layout="card"
+            readOnly={!mine}
+            initial={{ title: proposal.title, description: proposal.description, repos: proposal.repos, agent: conversation.agent, model: conversation.model, sdd: true, gates: ['spec', 'plan'] }}
+            submitLabel="Criar ticket"
+            busyLabel="Criando worktrees…"
+            cancelLabel={discarding ? 'Descartando…' : 'Descartar'}
+            onSubmit={async (ticket) => {
+              await resolve(ticket)
+            }}
+            onCancel={() => {
+              setDiscarding(true)
+              resolve().finally(() => setDiscarding(false))
+            }}
+          />
+          {!mine && <span className="text-[13px] text-muted-foreground">Só {conversation.author ?? 'quem abriu a conversa'} pode criar este ticket.</span>}
+        </>
+      )}
+    </div>
+  )
 }
 
 function Composer({ conversationId, running }: { conversationId: string; running: boolean }) {

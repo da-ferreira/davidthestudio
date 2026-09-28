@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router'
-import { ArrowLeft, FolderGit2, LayoutGrid, LogOut, MessageCircleQuestion, Monitor, Moon, Plug, Sun, Ticket, Users } from 'lucide-react'
+import { ArrowLeft, FolderGit2, LayoutGrid, Lightbulb, LogOut, MessagesSquare, Monitor, Moon, Plug, Sun, Ticket, Users } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import {
   Sidebar,
@@ -118,11 +118,21 @@ function WorkspaceNav({ id }: { id: string }) {
             </NavLink>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <NavLink to={`/w/${id}/perguntar`}>
+            <NavLink to={`/w/${id}/conversar`}>
               {({ isActive }) => (
                 <SidebarMenuButton isActive={isActive}>
-                  <MessageCircleQuestion />
-                  Perguntar
+                  <MessagesSquare />
+                  Conversar
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <NavLink to={`/w/${id}/melhorias`}>
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive}>
+                  <Lightbulb />
+                  Melhorias
                 </SidebarMenuButton>
               )}
             </NavLink>

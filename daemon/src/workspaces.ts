@@ -7,6 +7,7 @@ import { deleteConversations } from './conversations.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
+import { deleteImprovements } from './improvements.ts'
 import { suggestTest } from './node-deps.ts'
 import { open, seal } from './secrets.ts'
 import { deleteTickets, openTickets, ticketsUsingRepo } from './tickets.ts'
@@ -178,6 +179,7 @@ export async function removeWorkspace(id: string) {
   if (open.length) throw new HttpError(409, 'Há tickets abertos neste workspace', open.map((t) => `${t} ainda tem worktrees; encerre ou descarte antes`))
   await deleteConversations(id)
   deleteTickets(id)
+  deleteImprovements(id)
   db.prepare('DELETE FROM repo_envs WHERE workspace_id = ?').run(id)
   db.prepare('DELETE FROM workspaces WHERE id = ?').run(id)
 }
