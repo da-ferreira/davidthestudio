@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-const TABS = ['spec', 'log', 'diff', 'testes']
+const TABS = ['spec', 'plano', 'log', 'diff', 'testes']
 
 export function Ticket() {
   const { id, ticketId } = useParams()
@@ -61,7 +61,14 @@ export function Ticket() {
   const [params, setParams] = useSearchParams()
   const sdd = !!ticket && hasSdd(ticket, docs)
   const aba = params.get('aba')
-  const tab = TABS.includes(aba ?? '') && (aba !== 'spec' || sdd) ? aba! : ticket?.stage === 'spec' || ticket?.stage === 'plan' ? 'spec' : 'log'
+  const tab =
+    TABS.includes(aba ?? '') && ((aba !== 'spec' && aba !== 'plano') || sdd)
+      ? aba!
+      : ticket?.stage === 'spec'
+        ? 'spec'
+        : ticket?.stage === 'plan'
+          ? 'plano'
+          : 'log'
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
@@ -103,7 +110,13 @@ export function Ticket() {
                   {sdd && (
                     <TabsTrigger value="spec" className="px-3">
                       <FileText />
-                      Spec e plano
+                      Spec
+                    </TabsTrigger>
+                  )}
+                  {sdd && (
+                    <TabsTrigger value="plano" className="px-3">
+                      <FileText />
+                      Plano
                     </TabsTrigger>
                   )}
                   <TabsTrigger value="log" className="px-3">
@@ -123,7 +136,10 @@ export function Ticket() {
                 {!isClosed(ticket) && <span className="ml-auto min-w-0 truncate font-mono text-[12px] text-muted-foreground">{ticket.taskDir}</span>}
               </div>
               <TabsContent value="spec" className="flex min-h-0 flex-col">
-                <DocsPanel ticket={ticket} docs={docs} onDocs={setDocs} />
+                <DocsPanel ticket={ticket} stage="spec" docs={docs} onDocs={setDocs} />
+              </TabsContent>
+              <TabsContent value="plano" className="flex min-h-0 flex-col">
+                <DocsPanel ticket={ticket} stage="plan" docs={docs} onDocs={setDocs} />
               </TabsContent>
               <TabsContent value="log" className="flex min-h-0 flex-col">
                 <LogPanel ticket={ticket} events={events} strip={strip} />
@@ -327,7 +343,7 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
         )}
         {ticket.status === 'approval' && (
           <p className="rounded-[12px] border border-warning-line bg-warning-soft/40 px-3.5 py-2.5 text-[13px]">
-            {ticket.stage === 'spec' ? 'A spec está pronta' : 'O plano está pronto'}. Aprove na aba Spec e plano ou peça ajustes por aqui.
+            {ticket.stage === 'spec' ? 'A spec está pronta' : 'O plano está pronto'}. Aprove na aba {ticket.stage === 'spec' ? 'Spec' : 'Plano'} ou peça ajustes por aqui.
             {ticket.stage === 'spec' && ticket.pickRepos && ' Ao aprovar, ficam só os repositórios da seção "Repositórios" da spec.'}
           </p>
         )}
