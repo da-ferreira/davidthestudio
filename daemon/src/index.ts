@@ -193,6 +193,9 @@ app.post<{ Params: { id: string } }>('/api/tickets/:id/stop', async (req) => {
   await tickets.stopTicket(req.params.id)
   return tickets.getTicket(req.params.id)
 })
+app.post<{ Params: { id: string }; Body: { on: boolean } }>('/api/tickets/:id/autonomous', async (req) => {
+  return tickets.setAutonomous(req.params.id, !!req.body?.on)
+})
 app.get<{ Params: { id: string } }>('/api/tickets/:id/docs', async (req) => tickets.getDocs(req.params.id))
 app.put<{ Params: { id: string; stage: DocStage }; Body: { content: string } }>('/api/tickets/:id/docs/:stage', async (req) => {
   tickets.editDoc(req.params.id, req.params.stage, req.body.content)

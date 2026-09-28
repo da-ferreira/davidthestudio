@@ -5,6 +5,7 @@ import type { AgentEvent, Ask, Reply, TestRun, Ticket as TicketT, TicketDocs, Ti
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
@@ -88,6 +89,7 @@ export function Ticket() {
                   {agentLabel(ticket)}
                 </Badge>
                 <span className="whitespace-nowrap">criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                {!isClosed(ticket) && <AutonomousToggle ticket={ticket} />}
               </div>
               <StageStepper ticket={ticket} docs={docs} />
             </div>
@@ -200,6 +202,23 @@ function toolSummary(e: Extract<AgentEvent, { type: 'tool' }>): string {
   const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
   if (e.name === 'AskUserQuestion') return (i.questions as { question: string }[]).map((q) => q.question).join(' · ')
   return s('file_path') || s('command') || s('pattern') || s('url') || s('description') || JSON.stringify(i).slice(0, 160)
+}
+
+function AutonomousToggle({ ticket }: { ticket: TicketT }) {
+  const [busy, setBusy] = useState(false)
+  const toggle = (on: boolean) => {
+    setBusy(true)
+    // O ticket atualizado chega pelo WebSocket (kind: 'ticket'); não precisa setar estado aqui.
+    api(`/tickets/${ticket.id}/autonomous`, { method: 'POST', body: { on } })
+      .catch(() => {})
+      .finally(() => setBusy(false))
+  }
+  return (
+    <label className="flex items-center gap-1.5 whitespace-nowrap" title="O agente age sem pedir aprovação a cada ferramenta; ainda para em perguntas dele e em git commit/push/troca de branch">
+      <Switch checked={ticket.autonomous} onCheckedChange={toggle} disabled={busy} className="scale-90" />
+      Modo autônomo
+    </label>
+  )
 }
 
 function StopButton({ ticketId }: { ticketId: string }) {

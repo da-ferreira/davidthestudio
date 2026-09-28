@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentEvent, AgentKind, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
+import type { AgentEvent, AgentKind, Ask, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentModels, agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
@@ -41,6 +41,7 @@ type Row = {
   session_id: string | null
   stage: Stage
   gates: string
+  autonomous: number
   prs: string
   diff: string | null
   // repo -> commit de onde a worktree partiu
@@ -67,6 +68,7 @@ const toTicket = (r: Row, summary: EventSummary): Ticket => ({
   sessionId: r.session_id,
   stage: r.stage,
   gates: JSON.parse(r.gates),
+  autonomous: !!r.autonomous,
   prs: JSON.parse(r.prs),
   author: r.author,
   createdAt: r.created_at,
@@ -92,7 +94,7 @@ export function emit(id: string, m: WsMessage) {
 db.prepare("UPDATE tickets SET status = 'interrupted' WHERE status IN ('running', 'waiting')").run()
 
 const sessions = new Map<string, claude.Session>()
-const asks = new Map<string, { ticket: string; resolve: (r: Reply) => void }>()
+const asks = new Map<string, { ticket: string; ask: Ask; resolve: (r: Reply) => void }>()
 // Mensagens que chegaram enquanto a sessão encerrava; viram um resume logo em seguida.
 const pending = new Map<string, string[]>()
 const stopping = new Set<string>()
@@ -249,9 +251,9 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases, pick_repos)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases), pick ? 1 : 0)
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases, pick_repos, autonomous)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases), pick ? 1 : 0, input.autonomous ? 1 : 0)
 
   for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
@@ -313,17 +315,44 @@ export async function stopTicket(id: string) {
   await s.stop()
 }
 
+// Reaproveitada pela resposta humana (answerAsk) e pela aprovação automática do modo autônomo.
+function resolveAsk(askId: string, reply: Reply) {
+  const a = asks.get(askId)
+  if (!a) return
+  asks.delete(askId)
+  record(a.ticket, { type: 'answer', id: askId, reply: { allow: !!reply.allow, answers: reply.answers } })
+  a.resolve(reply)
+  if (![...asks.values()].some((x) => x.ticket === a.ticket)) setStatus(a.ticket, 'running')
+}
+
 export function answerAsk(id: string, askId: string, reply: Reply) {
   const a = asks.get(askId)
   if (!a || a.ticket !== id) throw new HttpError(404, 'Essa pergunta não está mais aberta')
-  asks.delete(askId)
-  record(id, { type: 'answer', id: askId, reply: { allow: !!reply.allow, answers: reply.answers } })
-  a.resolve(reply)
-  if (![...asks.values()].some((x) => x.ticket === id)) setStatus(id, 'running')
+  resolveAsk(askId, reply)
 }
 
 function dropAsks(id: string) {
   for (const [askId, a] of asks) if (a.ticket === id) asks.delete(askId)
+}
+
+// Comandos que continuam pedindo aprovação mesmo no modo autônomo: commit, push e troca de
+// branch são difíceis de desfazer ou afetam o remote, então ficam fora da aprovação automática.
+const GIT_GUARD = /\bgit\b[^&;|\n]*\b(commit|push|checkout|switch)\b/
+function isGitGuarded(ask: Ask): boolean {
+  return ask.kind === 'permission' && ask.tool === 'Bash' && GIT_GUARD.test(ask.detail)
+}
+
+// Liga/desliga a qualquer momento, mesmo com o agente rodando; vale a partir do próximo
+// pedido de ferramenta. Um pedido de permissão já pendente (fora da trava de git) resolve
+// junto, então destrava um ticket parado em waiting sem precisar clicar em Permitir.
+export function setAutonomous(id: string, on: boolean): Ticket {
+  const t = getTicket(id)
+  assertOpen(t)
+  db.prepare('UPDATE tickets SET autonomous = ? WHERE id = ?').run(on ? 1 : 0, id)
+  record(id, { type: 'note', text: `modo autônomo ${on ? 'ligado' : 'desligado'}` })
+  emit(id, { kind: 'ticket', ticket: getTicket(id) })
+  if (on) for (const [askId, a] of asks) if (a.ticket === id && a.ask.kind === 'permission' && !isGitGuarded(a.ask)) resolveAsk(askId, { allow: true })
+  return getTicket(id)
 }
 
 const COMMIT_FILE = 'commit.md'
@@ -365,6 +394,9 @@ const CODEX_STAGES =
 // O Codex não tem como perguntar no meio do turno; as dúvidas vão para a spec e o humano responde em "Pedir ajuste".
 const CODEX_DOUBTS = 'Não há como perguntar ao humano durante o turno: se faltar informação, termine a spec com uma seção "Dúvidas" listando as perguntas.'
 
+const AUTONOMOUS_NOTE =
+  'Modo autônomo ligado: você pode usar ferramentas sem esperar aprovação a cada passo. Continue usando AskUserQuestion sempre que precisar de uma decisão explícita do humano (escolha de design, algo ambíguo). Comandos git de commit, push ou troca de branch continuam pedindo aprovação.'
+
 const linkedRepos = (t: Ticket) => t.repos.filter((r) => hasLinkedNodeModules(path.join(t.taskDir, r)))
 
 function linkedNodeModules(t: Ticket) {
@@ -388,6 +420,7 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
     `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
     'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
     ...linkedNodeModules(t),
+    ...(t.autonomous && t.agent === 'claude' ? [AUTONOMOUS_NOTE] : []),
     t.agent === 'codex' ? CODEX_STAGES : stageInstructions(t),
   ].join('\n')
   const stage = [stageInstructions(t), ...(t.stage === 'spec' ? [CODEX_DOUBTS] : [])].join('\n')
@@ -418,13 +451,17 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
     container,
     // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
     extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
-    onAsk: (askId, ask, signal) =>
-      new Promise((resolve) => {
-        asks.set(askId, { ticket: t.id, resolve })
+    onAsk: (askId, ask, signal) => {
+      // Lido na hora (não travado no início da sessão): ligar o modo autônomo pela tela
+      // já vale para o próximo pedido, sem precisar reiniciar a sessão do agente.
+      if (ask.kind === 'permission' && !isGitGuarded(ask) && getTicket(t.id).autonomous) return Promise.resolve({ allow: true })
+      return new Promise((resolve) => {
+        asks.set(askId, { ticket: t.id, ask, resolve })
         record(t.id, { type: 'ask', id: askId, ask })
         setStatus(t.id, 'waiting')
         signal.addEventListener('abort', () => asks.delete(askId) && resolve({ allow: false }))
-      }),
+      })
+    },
   })
   sessions.set(t.id, session)
 
