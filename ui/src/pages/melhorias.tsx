@@ -118,10 +118,14 @@ export function Melhorias() {
                     <TableCell>
                       <Badge className={STATUS[i.status].className}>{STATUS[i.status].label}</Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-[12px] text-muted-foreground">
+                    <TableCell className="text-[12px] text-muted-foreground">
                       {i.ticketId ? (
-                        <Link to={`/w/${id}/tickets/${i.ticketId}`} onClick={(e) => e.stopPropagation()} className="hover:text-foreground">
+                        <Link to={`/w/${id}/tickets/${i.ticketId}`} onClick={(e) => e.stopPropagation()} className="font-mono hover:text-foreground">
                           {i.ticketId}
+                        </Link>
+                      ) : i.status === 'open' ? (
+                        <Link to={`/w/${id}/tickets/novo?melhoria=${i.id}`} onClick={(e) => e.stopPropagation()} className="hover:text-foreground hover:underline">
+                          Criar ticket
                         </Link>
                       ) : (
                         '—'
