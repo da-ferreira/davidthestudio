@@ -45,6 +45,7 @@ export function TicketForm({
   const [conn, setConn] = useState<Connections | null>(null)
   const [sdd, setSdd] = useState(initial?.sdd ?? true)
   const [gates, setGates] = useState<DocStage[]>(initial?.gates ?? ['spec', 'plan'])
+  const [autonomous, setAutonomous] = useState(initial?.autonomous ?? false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -66,7 +67,7 @@ export function TicketForm({
     setBusy(true)
     setError(null)
     try {
-      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates })
+      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates, autonomous })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -185,6 +186,18 @@ export function TicketForm({
             </div>
           </div>
         )}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label>Modo autônomo</Label>
+        <label className="flex items-start justify-between gap-3">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[14px]">Agir sem pedir aprovação a cada ferramenta</span>
+            <span className="text-[13px] text-muted-foreground">
+              O agente só para se ele mesmo perguntar algo (AskUserQuestion) ou tentar dar commit, push ou trocar de branch.
+            </span>
+          </span>
+          <Switch checked={autonomous} onCheckedChange={setAutonomous} disabled={readOnly} />
+        </label>
       </div>
     </>
   )

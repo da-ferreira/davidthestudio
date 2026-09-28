@@ -99,6 +99,9 @@ export type Ticket = {
   stage: Stage
   // Etapas que param para o humano aprovar; as outras avançam sozinhas.
   gates: DocStage[]
+  // Liga/desliga durante a criação ou a execução: pedidos de permissão de ferramenta passam
+  // direto, exceto AskUserQuestion e comandos git de commit/push/troca de branch.
+  autonomous: boolean
   // repo -> URL do PR aberto pelo studio
   prs: Record<string, string>
   // Nome de quem criou.
@@ -112,7 +115,7 @@ export type Ticket = {
 
 // sdd false: ticket rápido, começa direto na implementação.
 // repos vazio (só com spec): o agente decide.
-export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[] }
+export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
 export type TicketDocs = Record<DocStage, string | null>
