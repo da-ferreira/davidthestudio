@@ -130,6 +130,12 @@ export type AgentEvent =
   | { type: 'answer'; id: string; reply: Reply }
   // Ações do próprio studio (commit, PR), para ficarem no histórico do ticket.
   | { type: 'note'; text: string; url?: string }
+  // Conversar: o agente propôs um ticket; vira cartão que a pessoa confirma ou descarta.
+  | { type: 'proposal'; id: string; proposal: TicketProposal }
+  // ticketId ausente: descartada.
+  | { type: 'proposal_done'; id: string; ticketId?: string }
+
+export type TicketProposal = { title: string; description: string; repos: string[]; improvementId?: string }
 
 export type Question = {
   question: string
@@ -150,7 +156,7 @@ export type TicketEvent = { seq: number; at: string; event: AgentEvent }
 
 export type TicketDetail = Ticket & { events: TicketEvent[] }
 
-// Modo Perguntar: conversa só de leitura no workspace, sem ticket.
+// Modo Conversar: conversa sobre o código do workspace, sem editar arquivos; só propõe tickets e mexe nas melhorias.
 export type ConversationStatus = 'running' | 'idle' | 'error' | 'interrupted'
 
 export type Conversation = {
@@ -166,6 +172,31 @@ export type Conversation = {
 }
 
 export type NewConversation = { text: string; agent: AgentKind; model: string }
+
+// open: aberta; ticket: virou ticket (ticketId); done: feita.
+export type ImprovementStatus = 'open' | 'ticket' | 'done'
+
+export type Improvement = {
+  id: string
+  workspaceId: string
+  title: string
+  description: string
+  status: ImprovementStatus
+  ticketId: string | null
+  author: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type NewImprovement = { title: string; description?: string }
+
+export type ImprovementPatch = { title?: string; description?: string; status?: ImprovementStatus; ticketId?: string | null }
+
+// text: MELHORIAS.md achado na raiz dos repos (vazio se não houver).
+export type ImportPreview = { text: string }
+
+// dryRun: só conta o que seria criado e o que seria pulado.
+export type ImprovementImport = { created: number; skipped: number }
 
 // error: não chegou a rodar até o fim (instalação falhou, tempo esgotado). interrupted: o daemon caiu no meio.
 export type TestStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error' | 'interrupted'

@@ -2,6 +2,7 @@ import path from 'node:path'
 import { query, type HookCallback, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, Ask, Question, Reply } from '@studio/shared'
 import { forwardKeys, spawnInContainer, type Mount } from '../containers.ts'
+import { SERVER } from '../studio-tools.ts'
 
 const MAX_OUTPUT = 4000
 
@@ -15,8 +16,11 @@ type StartOptions = {
   writableDir?: string
   // Pastas fora do cwd que o agente acessa sem pedir permissão.
   extraDirs?: string[]
-  // Só leitura (modo Perguntar): ferramentas que pedem permissão são recusadas sem ir à tela.
+  // Só leitura (modo Conversar): ferramentas que pedem permissão são recusadas sem ir à tela,
+  // menos as do servidor MCP do studio (mcp).
   readOnly?: boolean
+  // Servidor MCP stdio com as ferramentas do studio (criar melhoria, propor ticket).
+  mcp?: { command: string; args: string[] }
   // Ambiente completo do processo (login do usuário); ausente herda o do daemon.
   env?: Record<string, string>
   // Roda o agente num container com só estas pastas montadas.
@@ -63,6 +67,7 @@ export function start(o: StartOptions): Session {
       model: o.model,
       resume: o.resume ?? undefined,
       additionalDirectories: o.extraDirs,
+      mcpServers: o.mcp && { [SERVER]: { type: 'stdio', command: o.mcp.command, args: o.mcp.args } },
       env: o.env,
       spawnClaudeCodeProcess: o.container && inContainer(o.container, o.cwd),
       // Edições dentro da pasta da tarefa passam; o resto vira pedido de permissão na tela.
@@ -70,7 +75,13 @@ export function start(o: StartOptions): Session {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: o.instructions },
       hooks: o.writableDir ? { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [onlyInside(o.cwd, o.writableDir)] }] } : undefined,
       canUseTool: async (tool, toolInput, { signal, toolUseID }) => {
-        if (o.readOnly) return { behavior: 'deny', message: 'Nesta conversa o agente só lê: não edita arquivos nem roda comandos que mudem algo. Se precisar perguntar, pergunte na resposta.' }
+        if (o.readOnly) {
+          if (o.mcp && tool.startsWith(`mcp__${SERVER}__`)) return { behavior: 'allow', updatedInput: toolInput }
+          return {
+            behavior: 'deny',
+            message: 'Nesta conversa o agente não edita arquivos nem roda comandos que mudem algo; só usa as ferramentas do studio. Se precisar perguntar, pergunte na resposta.',
+          }
+        }
         const ask: Ask =
           tool === 'AskUserQuestion'
             ? { kind: 'question', questions: questionsOf(toolInput) }

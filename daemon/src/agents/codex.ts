@@ -1,6 +1,7 @@
 import { Codex, type ThreadEvent, type ThreadItem } from '@openai/codex-sdk'
 import type { AgentEvent } from '@studio/shared'
 import { codexLauncher, forwardKeys, removeContainer, type Mount } from '../containers.ts'
+import { SERVER } from '../studio-tools.ts'
 import type { Session } from './claude.ts'
 
 const MAX_OUTPUT = 4000
@@ -15,8 +16,10 @@ type StartOptions = {
   resume?: string | null
   // Se definido, só esta pasta é gravável (etapas de spec e plano).
   writableDir?: string
-  // Nada gravável (modo Perguntar).
+  // Nada gravável (modo Conversar).
   readOnly?: boolean
+  // Servidor MCP stdio com as ferramentas do studio (criar melhoria, propor ticket).
+  mcp?: { command: string; args: string[] }
   // Pastas onde .env, chaves e afins ficam ilegíveis para o agente.
   secretDirs: string[]
   // Ambiente completo do processo (CODEX_HOME do usuário); ausente herda o do daemon.
@@ -45,6 +48,8 @@ export function start(o: StartOptions): Session {
       developer_instructions: o.instructions,
       default_permissions: profile,
       permissions: { [profile]: { extends: o.readOnly || o.writableDir ? ':read-only' : ':workspace', network: { enabled: true } } },
+      // approve: com approvalPolicy never, ferramenta que pedisse aprovação seria recusada.
+      ...(o.mcp && { mcp_servers: { [SERVER]: { command: o.mcp.command, args: o.mcp.args, default_tools_approval_mode: 'approve' } } }),
     },
     // Chaves que são caminhos precisam ir como tabela inline; o SDK não põe aspas em chaves pontuadas.
     configOverrides: [`permissions.${profile}.filesystem={${rules.join(', ')}}`],

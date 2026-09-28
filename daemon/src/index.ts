@@ -1,6 +1,6 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DocStage, Health, NewConversation, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
@@ -8,6 +8,7 @@ import { CONTAINERS, ensureImage, IMAGE } from './containers.ts'
 import { HttpError } from './http-error.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
+import * as improvements from './improvements.ts'
 import * as tickets from './tickets.ts'
 import * as ws from './workspaces.ts'
 
@@ -233,6 +234,22 @@ app.post<{ Params: { id: string; askId: string }; Body: Reply }>('/api/tickets/:
   return tickets.getTicket(req.params.id)
 })
 
+app.get<{ Params: { id: string } }>('/api/workspaces/:id/improvements', async (req) => improvements.listImprovements(req.params.id))
+app.post<{ Params: { id: string }; Body: NewImprovement }>('/api/workspaces/:id/improvements', async (req) =>
+  improvements.createImprovement(req.params.id, req.body ?? { title: '' }, req.user.id),
+)
+app.get<{ Params: { id: string } }>('/api/workspaces/:id/improvements/import', async (req) => improvements.importPreview(req.params.id))
+app.post<{ Params: { id: string }; Body: { text: string; dryRun?: boolean } }>('/api/workspaces/:id/improvements/import', async (req) =>
+  improvements.importMarkdown(req.params.id, req.body?.text ?? '', req.user, !!req.body?.dryRun),
+)
+app.put<{ Params: { id: string; itemId: string }; Body: ImprovementPatch }>('/api/workspaces/:id/improvements/:itemId', async (req) =>
+  improvements.updateImprovement(req.params.id, req.params.itemId, req.body ?? {}),
+)
+app.delete<{ Params: { id: string; itemId: string } }>('/api/workspaces/:id/improvements/:itemId', async (req) => {
+  improvements.deleteImprovement(req.params.id, req.params.itemId)
+  return { ok: true }
+})
+
 app.get<{ Params: { id: string } }>('/api/workspaces/:id/conversations', async (req) => conversations.listConversations(req.params.id))
 app.post<{ Params: { id: string }; Body: NewConversation }>('/api/workspaces/:id/conversations', async (req) =>
   conversations.createConversation(req.params.id, req.body ?? {}, req.user),
@@ -245,6 +262,9 @@ app.post<{ Params: { id: string } }>('/api/conversations/:id/stop', async (req) 
   await conversations.stopConversation(req.params.id)
   return { ok: true }
 })
+app.post<{ Params: { id: string; pid: string }; Body: { ticket?: NewTicket } }>('/api/conversations/:id/proposals/:pid', async (req) => ({
+  ticketId: await conversations.resolveProposal(req.params.id, req.params.pid, req.body?.ticket ?? null, req.user),
+}))
 app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req) => {
   await conversations.deleteConversation(req.params.id, req.user)
   return { ok: true }
