@@ -10,7 +10,7 @@ import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
 import { updateImprovement } from './improvements.ts'
-import { BRIDGE, SERVER, serveTools, type ToolServer } from './studio-tools.ts'
+import { SERVER, serveTools, type ToolServer } from './studio-tools.ts'
 import { createTicket, emit, linkContext } from './tickets.ts'
 import { workspaceRepos, workspaceRoot } from './workspaces.ts'
 
@@ -159,7 +159,7 @@ async function run(r: Row, prompt: string) {
       onProposal: (proposal) => record(r.id, { type: 'proposal', id: randomUUID(), proposal }),
     })
     // Dentro do container o node é o da imagem; a ponte e o socket entram montados no mesmo caminho.
-    const mcp = { command: CONTAINERS ? 'node' : process.execPath, args: [BRIDGE, tools.socket] }
+    const mcp = { command: CONTAINERS ? 'node' : process.execPath, args: [tools.bridge, tools.socket] }
     const common = {
       cwd: r.dir,
       prompt,
@@ -183,8 +183,7 @@ async function run(r: Row, prompt: string) {
           mounts: [
             ...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false),
             ...homeMounts(env),
-            { path: BRIDGE, readOnly: true },
-            runMount(tools.dir),
+            { ...runMount(tools.dir), readOnly: true },
           ],
         }
       : undefined

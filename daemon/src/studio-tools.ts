@@ -11,7 +11,7 @@ import { workspaceRepos } from './workspaces.ts'
 // Ferramentas que o agente do modo Conversar pode usar. Um socket por conversa: o escopo
 // (workspace, quem registra a proposta) vem do próprio socket, não do que o agente manda.
 export const SERVER = 'studio'
-export const BRIDGE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-bridge.mjs')
+const BRIDGE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-bridge.mjs')
 
 type Ctx = { workspaceId: string; userId: string; onProposal: (p: TicketProposal) => void }
 type Args = Record<string, unknown>
@@ -132,7 +132,7 @@ function handle(m: Message, c: Ctx): unknown {
   }
 }
 
-export type ToolServer = { socket: string; dir: string; close: () => void }
+export type ToolServer = { socket: string; bridge: string; dir: string; close: () => void }
 
 export async function serveTools(conversationId: string, ctx: Ctx): Promise<ToolServer> {
   // Uma pasta por conversa: é ela que entra no container do agente, sem expor os sockets das outras.
@@ -140,6 +140,9 @@ export async function serveTools(conversationId: string, ctx: Ctx): Promise<Tool
   fs.rmSync(dir, { recursive: true, force: true })
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   const socket = path.join(dir, 'tools.sock')
+  // A ponte vai junto do socket: o container do agente só enxerga caminhos da máquina, não os do daemon.
+  const bridge = path.join(dir, 'mcp-bridge.mjs')
+  fs.copyFileSync(BRIDGE, bridge)
   const server = net.createServer((conn) => {
     let buf = ''
     conn.setEncoding('utf8')
@@ -177,6 +180,7 @@ export async function serveTools(conversationId: string, ctx: Ctx): Promise<Tool
   })
   return {
     socket,
+    bridge,
     dir,
     close: () => {
       server.close()
