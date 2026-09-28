@@ -30,9 +30,14 @@ const CODEX_VERSION = versionOf('@openai/codex', '@openai/codex-sdk')
 // A tag muda quando os SDKs mudam; aí a imagem é refeita.
 export const IMAGE = `${process.env.STUDIO_AGENT_IMAGE ?? 'studio-agent'}:claude-${CLAUDE_VERSION}-codex-${CODEX_VERSION}`
 const DOCKERFILE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docker/agent')
-const RUN_DIR = path.join(DATA_DIR, 'run')
+export const RUN_DIR = path.join(DATA_DIR, 'run')
+// No Docker Desktop a pasta de dados é do Mac, e um socket ali não conecta entre containers;
+// por isso run/ fica num volume do Docker, montado no agente pela subpasta.
+const RUN_VOLUME = process.env.STUDIO_RUN_VOLUME
 
-export type Mount = { path: string; readOnly?: boolean }
+export type Mount = { path: string; readOnly?: boolean; subpath?: string }
+
+export const runMount = (dir: string): Mount => (RUN_VOLUME ? { path: dir, subpath: path.relative(RUN_DIR, dir) } : { path: dir })
 
 async function docker(args: string[]) {
   try {
@@ -71,6 +76,7 @@ function runArgs(name: string, cwd: string, mounts: Mount[], envKeys: string[], 
   const volumes = mounts.flatMap((m) => {
     if (seen.has(m.path) || !fs.existsSync(m.path)) return []
     seen.add(m.path)
+    if (m.subpath) return ['--mount', `type=volume,src=${RUN_VOLUME},dst=${m.path},volume-subpath=${m.subpath}${m.readOnly ? ',readonly' : ''}`]
     return ['-v', `${m.path}:${m.path}${m.readOnly ? ':ro' : ''}`]
   })
   const user = typeof process.getuid === 'function' ? ['--user', `${process.getuid()}:${process.getgid!()}`] : []

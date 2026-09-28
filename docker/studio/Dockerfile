@@ -25,6 +25,8 @@ RUN apt-get update \
 # Só o cliente: o daemon cria os containers do agente pelo Docker da máquina (socket montado).
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
+# O volume de run/ herda dono e permissão desta pasta na primeira montagem.
+RUN mkdir -p /var/lib/studio/run && chown node:node /var/lib/studio/run && chmod 700 /var/lib/studio/run
 ENV STUDIO_DATA=/var/lib/studio STUDIO_HOST=0.0.0.0 STUDIO_TRUST_PROXY=1 STUDIO_CONTAINERS=1
 USER node
 WORKDIR /app/daemon

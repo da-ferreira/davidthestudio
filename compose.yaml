@@ -5,9 +5,12 @@ services:
     restart: unless-stopped
     environment:
       STUDIO_SETUP_CODE: ${STUDIO_SETUP_CODE}
+      STUDIO_RUN_VOLUME: studio-run
     # Mesmo caminho dentro e fora: o daemon monta essas pastas nos containers do agente pelo Docker da máquina.
     volumes:
       - /var/lib/studio:/var/lib/studio
+      # Sockets do daemon: num volume, porque numa pasta do Mac (Docker Desktop) eles não conectam entre containers.
+      - studio-run:/var/lib/studio/run
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - ${DOCKER_GID}
@@ -26,3 +29,5 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  studio-run:
+    name: studio-run

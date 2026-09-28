@@ -5,7 +5,7 @@ import type { AgentEvent, Conversation, ConversationStatus, NewConversation, New
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
-import { CONTAINERS, containerName, homeMounts, taskMounts } from './containers.ts'
+import { CONTAINERS, containerName, homeMounts, runMount, taskMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
@@ -184,7 +184,7 @@ async function run(r: Row, prompt: string) {
             ...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false),
             ...homeMounts(env),
             { path: BRIDGE, readOnly: true },
-            { path: tools.socket },
+            runMount(tools.dir),
           ],
         }
       : undefined

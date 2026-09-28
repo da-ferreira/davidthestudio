@@ -3,7 +3,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ImprovementStatus, TicketProposal } from '@studio/shared'
-import { DATA_DIR } from './db.ts'
+import { RUN_DIR } from './containers.ts'
 import { HttpError } from './http-error.ts'
 import { createImprovement, deleteImprovement, listImprovements, updateImprovement } from './improvements.ts'
 import { workspaceRepos } from './workspaces.ts'
@@ -12,7 +12,6 @@ import { workspaceRepos } from './workspaces.ts'
 // (workspace, quem registra a proposta) vem do próprio socket, não do que o agente manda.
 export const SERVER = 'studio'
 export const BRIDGE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-bridge.mjs')
-const RUN_DIR = path.join(DATA_DIR, 'run')
 
 type Ctx = { workspaceId: string; userId: string; onProposal: (p: TicketProposal) => void }
 type Args = Record<string, unknown>
@@ -133,12 +132,14 @@ function handle(m: Message, c: Ctx): unknown {
   }
 }
 
-export type ToolServer = { socket: string; close: () => void }
+export type ToolServer = { socket: string; dir: string; close: () => void }
 
 export async function serveTools(conversationId: string, ctx: Ctx): Promise<ToolServer> {
-  fs.mkdirSync(RUN_DIR, { recursive: true, mode: 0o700 })
-  const socket = path.join(RUN_DIR, `mcp-${conversationId}.sock`)
-  fs.rmSync(socket, { force: true })
+  // Uma pasta por conversa: é ela que entra no container do agente, sem expor os sockets das outras.
+  const dir = path.join(RUN_DIR, `mcp-${conversationId}`)
+  fs.rmSync(dir, { recursive: true, force: true })
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const socket = path.join(dir, 'tools.sock')
   const server = net.createServer((conn) => {
     let buf = ''
     conn.setEncoding('utf8')
@@ -174,12 +175,12 @@ export async function serveTools(conversationId: string, ctx: Ctx): Promise<Tool
     server.once('error', reject)
     server.listen(socket, () => resolve())
   })
-  fs.chmodSync(socket, 0o600)
   return {
     socket,
+    dir,
     close: () => {
       server.close()
-      fs.rmSync(socket, { force: true })
+      fs.rmSync(dir, { recursive: true, force: true })
     },
   }
 }
