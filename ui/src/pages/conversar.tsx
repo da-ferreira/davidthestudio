@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ArrowUp, Square, TicketPlus } from 'lucide-react'
-import type { AgentEvent, AgentKind, Connections, Conversation, ConversationStatus, TicketEvent, TicketProposal, Workspace, WorkspaceDetail, WsMessage } from '@studio/shared'
+import type { AgentEvent, AgentKind, Connections, Conversation, ConversationStatus, Improvement, TicketEvent, TicketProposal, Workspace, WorkspaceDetail, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -263,7 +263,15 @@ function Chat({
                 mine={c.authorId === user.id}
               />
             ) : (
-              <Message key={seq} event={event} strip={(s) => s.replace(new RegExp(`\\S*/conversations/${c.id}/`, 'g'), '')} />
+              <Message
+                key={seq}
+                event={event}
+                strip={(s) => s.replace(new RegExp(`\\S*/conversations/${c.id}/`, 'g'), '')}
+                workspaceId={workspaceId}
+                conversationId={c.id}
+                mine={c.authorId === user.id}
+                running={c.status === 'running'}
+              />
             )
           ))}
           {c.status === 'running' && (
@@ -298,7 +306,21 @@ function Chat({
   )
 }
 
-function Message({ event, strip }: { event: AgentEvent; strip: (s: string) => string }) {
+function Message({
+  event,
+  strip,
+  workspaceId,
+  conversationId,
+  mine,
+  running,
+}: {
+  event: AgentEvent
+  strip: (s: string) => string
+  workspaceId: string
+  conversationId: string
+  mine: boolean
+  running: boolean
+}) {
   if (event.type === 'user')
     return (
       <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
@@ -309,6 +331,7 @@ function Message({ event, strip }: { event: AgentEvent; strip: (s: string) => st
   if (event.type === 'tool') {
     const studio = studioTool(event.name)
     if (studio === 'propor_ticket') return null
+    if (studio === 'listar_melhorias') return <ImprovementsCard workspaceId={workspaceId} conversationId={conversationId} mine={mine} running={running} />
     if (studio) return <span className="truncate text-[12px] text-faint">{studioLabel(studio, event.input)}</span>
     const i = event.input
     const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : '')
@@ -330,11 +353,75 @@ function studioTool(name: string) {
 
 function studioLabel(tool: string, input: Record<string, unknown>) {
   const title = typeof input.titulo === 'string' ? `: ${input.titulo}` : ''
-  if (tool === 'listar_melhorias') return 'leu a lista de melhorias'
   if (tool === 'criar_melhoria') return `criou melhoria${title}`
   if (tool === 'editar_melhoria') return `editou melhoria${title}${typeof input.status === 'string' ? ` (${input.status})` : ''}`
   if (tool === 'apagar_melhoria') return 'apagou uma melhoria'
   return tool
+}
+
+const IMPROVEMENT_STATUS: Record<'open' | 'ticket', { label: string; className: string }> = {
+  open: { label: 'Aberta', className: 'bg-info-soft text-info' },
+  ticket: { label: 'Em ticket', className: 'bg-warning-soft text-warning' },
+}
+
+function ImprovementsCard({
+  workspaceId,
+  conversationId,
+  mine,
+  running,
+}: {
+  workspaceId: string
+  conversationId: string
+  mine: boolean
+  running: boolean
+}) {
+  const [items, setItems] = useState<Improvement[] | null>(null)
+  const [sendingId, setSendingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api<Improvement[]>(`/workspaces/${workspaceId}/improvements`).then(setItems)
+  }, [workspaceId])
+
+  const ask = (i: Improvement) => {
+    setSendingId(i.id)
+    setError(null)
+    api(`/conversations/${conversationId}/messages`, { method: 'POST', body: { text: `Abre um ticket a partir da melhoria ${i.id}: ${i.title}` } })
+      .catch((e) => setError(e instanceof ApiError ? e.message : 'Falha ao enviar'))
+      .finally(() => setSendingId(null))
+  }
+
+  if (!items) return <span className="text-[13px] text-faint">lendo a lista de melhorias…</span>
+
+  const shown = items.filter((i): i is Improvement & { status: 'open' | 'ticket' } => i.status !== 'done')
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-[16px] border bg-surface-2 p-4">
+      <span className="text-[13px] font-medium text-muted-foreground">Melhorias do workspace</span>
+      {shown.length === 0 && <span className="text-[13px] text-muted-foreground">Nenhuma melhoria aberta ou em ticket.</span>}
+      {shown.map((i) => (
+        <div key={i.id} className="flex items-center gap-2 text-[14px]">
+          <span className="min-w-0 flex-1 truncate">{i.title}</span>
+          <Badge className={IMPROVEMENT_STATUS[i.status].className}>{IMPROVEMENT_STATUS[i.status].label}</Badge>
+          {i.status === 'ticket' && i.ticketId && (
+            <Link to={`/w/${workspaceId}/tickets/${i.ticketId}`} className="shrink-0 text-[13px] text-muted-foreground underline">
+              {i.ticketId}
+            </Link>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            disabled={i.status === 'ticket' || !mine || running || sendingId === i.id}
+            onClick={() => ask(i)}
+          >
+            Abrir ticket
+          </Button>
+        </div>
+      ))}
+      {error && <span className="text-[13px] text-destructive">{error}</span>}
+    </div>
+  )
 }
 
 function ProposalCard({
