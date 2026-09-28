@@ -14,12 +14,20 @@ const DOC: Record<DocStage, { file: string; the: string; ready: string; approved
   plan: { file: 'plan.md', the: 'o plano', ready: 'pronto', approved: 'aprovado', after: 'O plano vem depois da spec aprovada.' },
 }
 
-export function DocsPanel({ ticket, docs, onDocs }: { ticket: Ticket; docs: TicketDocs | null; onDocs: (d: TicketDocs) => void }) {
+export function DocsPanel({
+  ticket,
+  stage,
+  docs,
+  onDocs,
+}: {
+  ticket: Ticket
+  stage: DocStage
+  docs: TicketDocs | null
+  onDocs: (d: TicketDocs) => void
+}) {
   return (
     <div className="-mr-8 flex min-h-0 flex-1 flex-col gap-4 overflow-auto pr-8">
-      {(['spec', 'plan'] as const).map((st) => (
-        <DocCard key={st} ticket={ticket} stage={st} text={docs?.[st] ?? null} onDocs={onDocs} />
-      ))}
+      <DocCard ticket={ticket} stage={stage} text={docs?.[stage] ?? null} onDocs={onDocs} />
     </div>
   )
 }
