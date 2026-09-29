@@ -57,10 +57,13 @@ export function UsageButton() {
           setOpen(true)
           load()
         }}
-        className="relative text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-2.5 self-start text-[14px] text-muted-foreground hover:text-foreground"
       >
-        <Gauge className="size-4" />
-        {alert !== 'ok' && <span className={cn('absolute -top-0.5 -right-0.5 size-1.5 rounded-full', barColor[alert])} />}
+        <span className="relative">
+          <Gauge className="size-4" />
+          {alert !== 'ok' && <span className={cn('absolute -top-0.5 -right-0.5 size-1.5 rounded-full', barColor[alert])} />}
+        </span>
+        Uso
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent aria-describedby={undefined} className="gap-5 sm:max-w-md">
