@@ -235,6 +235,23 @@ export type WsMessage =
 
 export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
 
+// Janela de limite da assinatura como o provedor informa. key: five_hour, seven_day, primary...
+export type UsageWindow = { key: string; label: string; utilization: number; resetsAt: string | null }
+
+// Gasto somado dos eventos result do usuário. null: nenhum evento trouxe o valor.
+export type UsageSpend = { unit: 'usd' | 'tokens'; today: number | null; week: number | null }
+
+// apikey: conectado por chave, sem limite de assinatura. error: não deu para ler os limites.
+export type ProviderUsage = {
+  agent: AgentKind
+  account: string | null
+  state: 'ok' | 'disconnected' | 'apikey' | 'error'
+  windows: UsageWindow[]
+  spend: UsageSpend
+}
+
+export type Usage = { claude: ProviderUsage; codex: ProviderUsage }
+
 export type RepoDiff = {
   repo: string
   base: string

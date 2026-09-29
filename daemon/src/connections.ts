@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentKind, AgentModel, AgentStatus, Connections, GithubStatus } from '@studio/shared'
+import type { AgentKind, AgentModel, AgentStatus, Connections, GithubStatus, UsageWindow } from '@studio/shared'
 import { CONTAINERS, containerName, forwardKeys, homeMounts, spawnInContainer } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import { HttpError } from './http-error.ts'
@@ -250,6 +250,9 @@ export function removeGithubToken(user: Owner) {
   dropCredential(user.id, 'github')
 }
 
+const withTimeout = <T>(p: Promise<T>, what: string) =>
+  Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new HttpError(502, `O agente não respondeu ${what}`)), CONTAINERS ? 60_000 : 30_000).unref())])
+
 // Perguntar ao agente custa subir a CLI (e o container); a lista quase nunca muda.
 const MODELS_TTL_MS = 10 * 60_000
 const modelCache = new Map<string, { at: number; models: AgentModel[] }>()
@@ -258,19 +261,18 @@ export async function agentModels(user: Owner, agent: AgentKind): Promise<AgentM
   const key = loginKey(user, agent)
   const hit = modelCache.get(key)
   if (hit && Date.now() - hit.at < MODELS_TTL_MS) return hit.models
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new HttpError(502, 'O agente não respondeu a lista de modelos')), CONTAINERS ? 60_000 : 30_000).unref())
-  const models = await Promise.race([agent === 'claude' ? claudeModels(user) : codexModels(user), timeout])
+  const models = await withTimeout(agent === 'claude' ? claudeModels(user) : codexModels(user), 'a lista de modelos')
   modelCache.set(key, { at: Date.now(), models })
   return models
 }
 
-async function claudeModels(user: Owner): Promise<AgentModel[]> {
+// Sessão sem prompt: só inicializa a CLI para responder uma consulta; quem chama fecha.
+function idleClaude(user: Owner) {
   const env = claudeEnv(user)
-  // Sessão sem prompt: só inicializa a CLI para responder a lista, e fecha.
   async function* idle(): AsyncGenerator<SDKUserMessage> {
     await new Promise(() => {})
   }
-  const q = query({
+  return query({
     prompt: idle(),
     options: {
       env,
@@ -285,6 +287,10 @@ async function claudeModels(user: Owner): Promise<AgentModel[]> {
         : undefined,
     },
   })
+}
+
+async function claudeModels(user: Owner): Promise<AgentModel[]> {
+  const q = idleClaude(user)
   try {
     const list = await q.supportedModels()
     return list.map((m) => {
@@ -297,22 +303,22 @@ async function claudeModels(user: Owner): Promise<AgentModel[]> {
   }
 }
 
-// O codex-sdk não lista modelos; o app-server da CLI sim (JSON-RPC, uma mensagem por linha).
-function codexModels(user: Owner): Promise<AgentModel[]> {
+// O codex-sdk não lista modelos nem limites; o app-server da CLI sim (JSON-RPC, uma mensagem por linha).
+function codexRpc<T>(user: Owner, method: string, params: object | undefined, what: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const child = spawnCli(user, 'codex', ['app-server'])
     let buf = ''
     let err = ''
     child.on('error', reject)
     child.stderr!.on('data', (b) => (err += b))
-    child.on('close', () => reject(new HttpError(502, err.trim() || 'O Codex não respondeu a lista de modelos')))
+    child.on('close', () => reject(new HttpError(502, err.trim() || `O Codex não respondeu ${what}`)))
     child.stdout!.on('data', (b) => {
       buf += b
       let nl: number
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl)
         buf = buf.slice(nl + 1)
-        let msg: { id?: number; result?: { data: { model: string; displayName: string; isDefault: boolean }[] }; error?: { message: string } }
+        let msg: { id?: number; result?: T; error?: { message: string } }
         try {
           msg = JSON.parse(line)
         } catch {
@@ -320,14 +326,73 @@ function codexModels(user: Owner): Promise<AgentModel[]> {
         }
         if (msg.id !== 2) continue
         child.kill()
-        if (!msg.result) return reject(new HttpError(502, msg.error?.message ?? 'O Codex recusou a lista de modelos'))
-        const def = msg.result.data.find((m) => m.isDefault)
-        resolve([{ id: '', label: def ? `Padrão da conta (${def.displayName})` : 'Padrão da conta' }, ...msg.result.data.map((m) => ({ id: m.model, label: m.displayName }))])
+        if (!msg.result) return reject(new HttpError(502, msg.error?.message ?? `O Codex recusou ${what}`))
+        resolve(msg.result)
       }
     })
     const send = (m: object) => child.stdin!.write(JSON.stringify(m) + '\n')
     send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'studio', title: null, version: '0' }, capabilities: null } })
     send({ method: 'initialized' })
-    send({ id: 2, method: 'model/list', params: { limit: 100 } })
+    send({ id: 2, method, params })
   })
+}
+
+async function codexModels(user: Owner): Promise<AgentModel[]> {
+  const { data } = await codexRpc<{ data: { model: string; displayName: string; isDefault: boolean }[] }>(user, 'model/list', { limit: 100 }, 'a lista de modelos')
+  const def = data.find((m) => m.isDefault)
+  return [{ id: '', label: def ? `Padrão da conta (${def.displayName})` : 'Padrão da conta' }, ...data.map((m) => ({ id: m.model, label: m.displayName }))]
+}
+
+type ClaudeWindow = { utilization: number | null; resets_at: string | null } | null | undefined
+
+// Janelas de limite da assinatura. null: conta sem limite de assinatura (chave de API).
+export async function claudeLimits(user: Owner): Promise<UsageWindow[] | null> {
+  const q = idleClaude(user)
+  try {
+    // API experimental do SDK: qualquer formato inesperado vira erro e a tela mostra "indisponível".
+    const r = await withTimeout(q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }), 'os limites de uso')
+    if (!r.rate_limits_available) return null
+    const rl = r.rate_limits
+    if (!rl || typeof rl !== 'object') throw new Error('Formato inesperado dos limites do Claude')
+    const out: UsageWindow[] = []
+    const add = (key: string, label: string, w: ClaudeWindow) => {
+      if (w && typeof w.utilization === 'number') out.push({ key, label, utilization: w.utilization, resetsAt: w.resets_at ?? null })
+    }
+    add('five_hour', 'Sessão atual', rl.five_hour)
+    add('seven_day', 'Esta semana', rl.seven_day)
+    add('seven_day_opus', 'Esta semana · Opus', rl.seven_day_opus)
+    add('seven_day_sonnet', 'Esta semana · Sonnet', rl.seven_day_sonnet)
+    for (const m of rl.model_scoped ?? []) {
+      const label = `Esta semana · ${m.display_name}`
+      if (!out.some((w) => w.label === label)) add(`model:${m.display_name}`, label, m)
+    }
+    return out
+  } finally {
+    q.close()
+  }
+}
+
+type CodexWindow = { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null } | null
+
+function codexLabel(mins: number | null) {
+  if (mins === null) return 'Janela de limite'
+  if (mins <= 1440) return 'Sessão atual'
+  if (mins === 10080) return 'Esta semana'
+  return mins % 1440 === 0 ? `Janela de ${mins / 1440} d` : `Janela de ${Math.round(mins / 60)} h`
+}
+
+export async function codexLimits(user: Owner): Promise<UsageWindow[]> {
+  const r = await withTimeout(
+    codexRpc<{ rateLimits: { primary: CodexWindow; secondary: CodexWindow } }>(user, 'account/rateLimits/read', undefined, 'os limites de uso'),
+    'os limites de uso',
+  )
+  if (!r.rateLimits || typeof r.rateLimits !== 'object') throw new Error('Formato inesperado dos limites do Codex')
+  const out: UsageWindow[] = []
+  for (const key of ['primary', 'secondary'] as const) {
+    const w = r.rateLimits[key]
+    if (!w || typeof w.usedPercent !== 'number') continue
+    // resetsAt vem em segundos desde a época.
+    out.push({ key, label: codexLabel(w.windowDurationMins), utilization: w.usedPercent, resetsAt: w.resetsAt ? new Date(w.resetsAt * 1000).toISOString() : null })
+  }
+  return out
 }
