@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgentEvent, Conversation, ConversationStatus, NewConversation, NewTicket, TicketEvent, TicketProposal, User } from '@studio/shared'
+import type { AgentEvent, Conversation, ConversationStatus, NewConversation, NewTicket, Prompt, TicketEvent, TicketProposal, User } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
@@ -9,9 +9,10 @@ import { CONTAINERS, containerName, homeMounts, runMount, taskMounts } from './c
 import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { HttpError } from './http-error.ts'
+import { checkImages, IMAGES_DIR } from './images.ts'
 import { updateImprovement } from './improvements.ts'
 import { SERVER, serveTools, type ToolServer } from './studio-tools.ts'
-import { createTicket, emit, linkContext } from './tickets.ts'
+import { createTicket, emit, joinPrompts, linkContext } from './tickets.ts'
 import { workspaceRepos, workspaceRoot } from './workspaces.ts'
 
 const DIR = path.join(DATA_DIR, 'conversations')
@@ -51,7 +52,7 @@ db.prepare("UPDATE conversations SET status = 'interrupted' WHERE status = 'runn
 const sessions = new Map<string, claude.Session>()
 const stopping = new Set<string>()
 // Mensagens que chegaram enquanto a sessão encerrava; viram a próxima pergunta logo em seguida.
-const pending = new Map<string, string[]>()
+const pending = new Map<string, Prompt[]>()
 const resolving = new Set<string>()
 
 function getRow(id: string): Row {
@@ -88,8 +89,9 @@ function setStatus(id: string, status: ConversationStatus, sessionId?: string) {
 
 export async function createConversation(workspaceId: string, input: NewConversation, user: User): Promise<Conversation> {
   const root = workspaceRoot(workspaceId)
-  const text = input.text?.trim()
-  if (!text) throw new HttpError(400, 'Escreva a mensagem')
+  const text = input.text?.trim() ?? ''
+  const images = checkImages(input.images)
+  if (!text && !images.length) throw new HttpError(400, 'Escreva a mensagem')
   const agent = input.agent ?? 'claude'
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
@@ -100,7 +102,7 @@ export async function createConversation(workspaceId: string, input: NewConversa
   const dir = path.join(DIR, id)
   fs.mkdirSync(dir, { recursive: true })
   linkContext(root, dir, workspaceRepos(workspaceId).map((r) => r.name))
-  const title = text.split('\n')[0].slice(0, 80)
+  const title = text.split('\n')[0].slice(0, 80) || 'Imagem'
   db.prepare("INSERT INTO conversations (id, workspace_id, title, agent, model, status, dir, created_by) VALUES (?, ?, ?, ?, ?, 'running', ?, ?)").run(
     id,
     workspaceId,
@@ -110,8 +112,8 @@ export async function createConversation(workspaceId: string, input: NewConversa
     dir,
     user.id,
   )
-  record(id, { type: 'user', text })
-  run(getRow(id), text)
+  record(id, { type: 'user', text, ...(images.length ? { images } : {}) })
+  run(getRow(id), { text, images })
   return getConversation(id)
 }
 
@@ -138,7 +140,7 @@ function owner(r: Row) {
   return { id: u.id, admin: !!u.admin }
 }
 
-async function run(r: Row, prompt: string) {
+async function run(r: Row, prompt: Prompt) {
   setStatus(r.id, 'running')
   let ok = false
   let session: claude.Session
@@ -184,6 +186,7 @@ async function run(r: Row, prompt: string) {
             ...taskMounts(r.dir, names, workspaceRoot(r.workspace_id), false),
             ...homeMounts(env),
             { ...runMount(tools.dir), readOnly: true },
+            { path: IMAGES_DIR, readOnly: true },
           ],
         }
       : undefined
@@ -208,7 +211,7 @@ async function run(r: Row, prompt: string) {
       const next = pending.get(r.id)
       pending.delete(r.id)
       if (stopping.delete(r.id)) return setStatus(r.id, 'interrupted')
-      if (next) return run(getRow(r.id), next.join('\n\n'))
+      if (next) return run(getRow(r.id), joinPrompts(next))
       setStatus(r.id, ok ? 'idle' : 'error')
     })
 }
@@ -218,17 +221,19 @@ function assertAuthor(r: Row, user: User) {
   if (r.created_by !== user.id) throw new HttpError(403, 'Só quem abriu a conversa pode continuar')
 }
 
-export function sendMessage(id: string, input: string, user: User) {
-  const text = input?.trim()
-  if (!text) throw new HttpError(400, 'Mensagem vazia')
+export function sendMessage(id: string, input: string, user: User, imageIds?: string[]) {
+  const text = input?.trim() ?? ''
+  const images = checkImages(imageIds)
+  if (!text && !images.length) throw new HttpError(400, 'Mensagem vazia')
   const r = getRow(id)
   assertAuthor(r, user)
   const s = sessions.get(id)
   if (s && stopping.has(id)) throw new HttpError(409, 'O agente está parando; mande de novo em instantes')
-  record(id, { type: 'user', text })
-  if (s?.send(text)) return
-  if (s) pending.set(id, [...(pending.get(id) ?? []), text])
-  else run(r, text)
+  const prompt = { text, images }
+  record(id, { type: 'user', text, ...(images.length ? { images } : {}) })
+  if (s?.send(prompt)) return
+  if (s) pending.set(id, [...(pending.get(id) ?? []), prompt])
+  else run(r, prompt)
 }
 
 // Cartão de ticket proposto pelo agente: cria (input) ou descarta (null). Uma vez só por proposta.

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ModelSelect } from '@/components/model-select'
+import { AttachButton, AttachmentPreview, useImageAttachments } from '@/components/image-attachments'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -48,6 +49,7 @@ export function TicketForm({
   const [autonomous, setAutonomous] = useState(initial?.autonomous ?? false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const attachments = useImageAttachments()
 
   useEffect(() => {
     api<Connections>('/me/connections').then(setConn)
@@ -67,7 +69,7 @@ export function TicketForm({
     setBusy(true)
     setError(null)
     try {
-      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates, autonomous })
+      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates, autonomous, images: attachments.ids })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -78,7 +80,14 @@ export function TicketForm({
   const card = layout === 'card'
 
   const main = (
-    <div className={cn('flex w-full flex-col gap-3.5 rounded-[22px] border bg-card p-4 pb-3', !card && 'max-w-[760px] shadow-[0_4px_16px_rgba(0,0,0,.06)]')}>
+    <div
+      {...(!readOnly && attachments.dropProps)}
+      className={cn(
+        'flex w-full flex-col gap-3.5 rounded-[22px] border bg-card p-4 pb-3',
+        !card && 'max-w-[760px] shadow-[0_4px_16px_rgba(0,0,0,.06)]',
+        attachments.dragging && 'border-ring',
+      )}
+    >
       <input
         autoFocus={!card}
         disabled={readOnly}
@@ -93,8 +102,11 @@ export function TicketForm({
         className="min-h-[110px] resize-none border-0 bg-transparent dark:bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
+        onPaste={attachments.onPaste}
       />
+      <AttachmentPreview attachments={attachments} />
       <div className="flex flex-wrap items-center gap-2">
+        {!readOnly && <AttachButton attachments={attachments} />}
         {workspace?.repos
           .filter((r) => r.present)
           .map((r) => {
@@ -211,7 +223,7 @@ export function TicketForm({
             {cancelLabel}
           </Button>
         )}
-        <Button size={card ? 'default' : 'lg'} className="flex-[2]" disabled={!title.trim() || (!repos.length && !sdd) || busy || disconnected} onClick={submit}>
+        <Button size={card ? 'default' : 'lg'} className="flex-[2]" disabled={!title.trim() || (!repos.length && !sdd) || busy || disconnected || attachments.uploading} onClick={submit}>
           {busy ? busyLabel : submitLabel}
         </Button>
       </div>

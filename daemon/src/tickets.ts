@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentEvent, AgentKind, Ask, DocStage, NewTicket, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
+import type { AgentEvent, AgentKind, Ask, DocStage, NewTicket, Prompt, RepoDiff, Reply, Stage, Ticket, TicketDetail, TicketDocs, TicketEvent, TicketStatus, User, WsMessage } from '@studio/shared'
 import * as claude from './agents/claude.ts'
 import * as codex from './agents/codex.ts'
 import { agentModels, agentStatus, claudeEnv, codexEnv, gitEnv } from './connections.ts'
@@ -11,6 +11,7 @@ import { DATA_DIR, db } from './db.ts'
 import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
 import { HttpError } from './http-error.ts'
+import { checkImages, IMAGES_DIR } from './images.ts'
 import { runTests, testableRepos, testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
@@ -96,7 +97,7 @@ db.prepare("UPDATE tickets SET status = 'interrupted' WHERE status IN ('running'
 const sessions = new Map<string, claude.Session>()
 const asks = new Map<string, { ticket: string; ask: Ask; resolve: (r: Reply) => void }>()
 // Mensagens que chegaram enquanto a sessão encerrava; viram um resume logo em seguida.
-const pending = new Map<string, string[]>()
+const pending = new Map<string, Prompt[]>()
 const stopping = new Set<string>()
 
 function getRow(id: string): Row {
@@ -190,6 +191,7 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   const manifestRepos = workspaceRepos(workspaceId)
   const title = input.title?.trim()
   if (!title) throw new HttpError(400, 'Dê um título ao ticket')
+  const images = checkImages(input.images)
   const agent = input.agent ?? 'claude'
   if (agent !== 'claude' && agent !== 'codex') throw new HttpError(400, 'Agente inválido')
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
@@ -257,9 +259,9 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
 
   for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
-  const prompt = t.description ? `# ${t.title}\n\n${t.description}` : t.title
-  record(id, { type: 'user', text: prompt })
-  run(t, prompt)
+  const text = t.description ? `# ${t.title}\n\n${t.description}` : t.title
+  record(id, { type: 'user', text, ...(images.length ? { images } : {}) })
+  run(t, { text, images })
   return getTicket(id)
 }
 
@@ -291,19 +293,21 @@ function setStatus(id: string, status: TicketStatus, sessionId?: string) {
   emit(id, { kind: 'ticket', ticket: getTicket(id) })
 }
 
-export function sendMessage(id: string, input: string) {
-  const text = input?.trim()
-  if (!text) throw new HttpError(400, 'Mensagem vazia')
+export function sendMessage(id: string, input: string, imageIds?: string[]) {
+  const text = input?.trim() ?? ''
+  const images = checkImages(imageIds)
+  if (!text && !images.length) throw new HttpError(400, 'Mensagem vazia')
   const t = getTicket(id)
   assertOpen(t)
   // O agente mexeria no código enquanto os testes rodam sobre ele.
   if (testsRunning(id)) throw new HttpError(409, 'Espere os testes terminarem ou pare-os')
   const s = sessions.get(id)
   if (s && stopping.has(id)) throw new HttpError(409, 'O agente está parando; mande de novo em instantes')
-  record(id, { type: 'user', text })
-  if (s?.send(text)) return
-  if (s) pending.set(id, [...(pending.get(id) ?? []), text])
-  else run(t, text, t.sessionId)
+  const prompt = { text, images }
+  record(id, { type: 'user', text, ...(images.length ? { images } : {}) })
+  if (s?.send(prompt)) return
+  if (s) pending.set(id, [...(pending.get(id) ?? []), prompt])
+  else run(t, prompt, t.sessionId)
 }
 
 export async function stopTicket(id: string) {
@@ -413,7 +417,7 @@ function owner(t: Ticket) {
   return { id: row.id, admin: !!row.admin }
 }
 
-function run(t: Ticket, prompt: string, resume?: string | null) {
+function run(t: Ticket, prompt: Prompt, resume?: string | null) {
   const instructions = [
     `Você está trabalhando no ticket ${t.id} do david the studio.`,
     `Os repositórios são as subpastas ${t.repos.map((r) => `${r}/`).join(', ')} da pasta atual, já prontos na branch ${t.branch}.`,
@@ -429,7 +433,7 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
   let ok = false
   const common = {
     cwd: t.taskDir,
-    prompt: t.agent === 'codex' ? `[Etapa do studio]\n${stage}\n\n${prompt}` : prompt,
+    prompt: t.agent === 'codex' ? { ...prompt, text: `[Etapa do studio]\n${stage}\n\n${prompt.text}` } : prompt,
     model: t.model,
     instructions,
     resume,
@@ -443,7 +447,7 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
   }
   const env = t.agent === 'codex' ? codexEnv(owner(t)) : claudeEnv(owner(t))
   const container = CONTAINERS
-    ? { name: containerName('ticket', t.id), mounts: [...taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), ...homeMounts(env)] }
+    ? { name: containerName('ticket', t.id), mounts: [...taskMounts(t.taskDir, t.repos, workspaceRoot(t.workspaceId), true), ...homeMounts(env), { path: IMAGES_DIR, readOnly: true }] }
     : undefined
   const session = t.agent === 'codex' ? codex.start({ ...common, env, container, secretDirs: [workspaceRoot(t.workspaceId), t.taskDir] }) : claude.start({
     ...common,
@@ -476,11 +480,16 @@ function run(t: Ticket, prompt: string, resume?: string | null) {
       const next = pending.get(t.id)
       pending.delete(t.id)
       if (stopping.delete(t.id)) return setStatus(t.id, 'interrupted')
-      if (next) return run(getTicket(t.id), next.join('\n\n'), getTicket(t.id).sessionId)
+      if (next) return run(getTicket(t.id), joinPrompts(next), getTicket(t.id).sessionId)
       if (!ok) return setStatus(t.id, 'error')
       afterTurn(getTicket(t.id))
     })
 }
+
+export const joinPrompts = (ps: Prompt[]): Prompt => ({
+  text: ps.map((p) => p.text).filter(Boolean).join('\n\n'),
+  images: ps.flatMap((p) => p.images),
+})
 
 const isDocStage = (st: Stage): st is DocStage => st === 'spec' || st === 'plan'
 const docPath = (t: Ticket, st: DocStage) => path.join(t.taskDir, DOCS_DIR, `${st}.md`)
@@ -543,7 +552,7 @@ function advance(t: Ticket, approved: boolean, picked?: string[]) {
       ? `A spec ${done}.${repos} Agora escreva o plano em ${DOCS_DIR}/plan.md, com cada passo numa linha - [ ].`
       : `O plano ${done}. Pode implementar, dentro das pastas dos repositórios, marcando - [x] em cada passo concluído.`
   record(t.id, { type: 'user', text })
-  run(getTicket(t.id), text, t.sessionId)
+  run(getTicket(t.id), { text, images: [] }, t.sessionId)
 }
 
 function assertDocStage(stage: string): asserts stage is DocStage {

@@ -1,6 +1,7 @@
 import { Codex, type ThreadEvent, type ThreadItem } from '@openai/codex-sdk'
-import type { AgentEvent } from '@studio/shared'
+import type { AgentEvent, Prompt } from '@studio/shared'
 import { codexLauncher, forwardKeys, removeContainer, type Mount } from '../containers.ts'
+import { imagePath } from '../images.ts'
 import { SERVER } from '../studio-tools.ts'
 import type { Session } from './claude.ts'
 
@@ -9,7 +10,7 @@ const SECRETS = ['**/.env*', '**/*.pem', '**/*.key', '**/id_rsa*', '**/id_ed2551
 
 type StartOptions = {
   cwd: string
-  prompt: string
+  prompt: Prompt
   // Vazio usa o modelo padrão da conta.
   model: string
   instructions: string
@@ -57,18 +58,18 @@ export function start(o: StartOptions): Session {
   const opts = { workingDirectory: o.cwd, model: o.model || undefined, approvalPolicy: 'never' as const, skipGitRepoCheck: true }
   const thread = o.resume ? codex.resumeThread(o.resume, opts) : codex.startThread(opts)
 
-  const queue: string[] = []
+  const queue: Prompt[] = []
   let closed = false
   const abort = new AbortController()
 
   // Uma mensagem por turno, como no adaptador do Claude; fila vazia encerra a sessão.
   const done = (async () => {
-    let text: string | undefined = o.prompt
-    while (text !== undefined && !closed) {
+    let next: Prompt | undefined = o.prompt
+    while (next !== undefined && !closed) {
       const began = Date.now()
       let failed = false
       try {
-        const { events } = await thread.runStreamed(text, { signal: abort.signal })
+        const { events } = await thread.runStreamed(inputOf(next), { signal: abort.signal })
         for await (const e of events) {
           for (const ev of translate(e, o.model, began)) o.onEvent(ev)
           if (e.type === 'turn.failed') failed = true
@@ -78,15 +79,15 @@ export function start(o: StartOptions): Session {
         if (!closed && !failed) throw err
       }
       if (failed) break
-      text = queue.shift()
+      next = queue.shift()
     }
     closed = true
   })()
 
   return {
-    send(text) {
+    send(prompt) {
       if (closed) return false
-      queue.push(text)
+      queue.push(prompt)
       return true
     },
     async stop() {
@@ -97,6 +98,12 @@ export function start(o: StartOptions): Session {
     },
     done,
   }
+}
+
+// O Codex lê a imagem pelo caminho; no container a pasta de imagens entra montada no mesmo caminho.
+function inputOf(p: Prompt) {
+  if (!p.images.length) return p.text
+  return [{ type: 'text' as const, text: p.text }, ...p.images.map((id) => ({ type: 'local_image' as const, path: imagePath(id) }))]
 }
 
 function translate(e: ThreadEvent, model: string, began: number): AgentEvent[] {
