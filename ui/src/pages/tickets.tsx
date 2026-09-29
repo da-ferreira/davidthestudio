@@ -54,8 +54,10 @@ export function Tickets() {
   const count = (f: (typeof FILTERS)[number]) =>
     items?.filter((t) => (!f.statuses || f.statuses.includes(t.status)) && matches(t)).length ?? 0
   const shown = items?.filter((t) => (!filter.statuses || filter.statuses.includes(t.status)) && matches(t))
+  const view = params.get('view')
   // No quadro as colunas já são os grupos das abas, então só a busca filtra.
-  const board = params.get('view') === 'quadro'
+  const board = view === 'quadro'
+  const flow = view === 'fluxo'
   const found = items?.filter(matches)
 
   // Muda só uma chave para a aba e a busca não se apagarem uma à outra.
@@ -97,10 +99,11 @@ export function Tickets() {
         <div className="flex items-center gap-3">
           <h1 className="text-[28px] font-medium tracking-[-0.025em]">Tickets</h1>
           {!!items?.length && (
-            <Tabs className="ml-auto" value={board ? 'quadro' : 'lista'} onValueChange={(v) => setParam('view', v === 'quadro' ? v : '')}>
+            <Tabs className="ml-auto" value={board ? 'quadro' : flow ? 'fluxo' : 'lista'} onValueChange={(v) => setParam('view', v === 'lista' ? '' : v)}>
               <TabsList>
                 <TabsTrigger value="lista">Lista</TabsTrigger>
                 <TabsTrigger value="quadro">Quadro</TabsTrigger>
+                <TabsTrigger value="fluxo">Fluxo</TabsTrigger>
               </TabsList>
             </Tabs>
           )}
@@ -174,7 +177,14 @@ export function Tickets() {
             </div>
           </div>
         )}
-        {!board && !!shown?.length && (
+        {flow && !!shown?.length && (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {shown.map((t) => (
+              <FlowNode key={t.id} ticket={t} workspaceId={id!} />
+            ))}
+          </div>
+        )}
+        {!board && !flow && !!shown?.length && (
           <div className="rounded-xl border">
             <Table>
               <TableHeader>
@@ -242,6 +252,24 @@ function TicketCard({ ticket: t, workspaceId }: { ticket: Ticket; workspaceId: s
         <Truncated text={t.pickRepos ? 'o agente escolhe' : t.repos.join(', ')} />
         <Truncated text={agentLabel(t)} />
         <span>{t.author ?? '—'}</span>
+      </div>
+    </div>
+  )
+}
+
+// Nó do modo Fluxo: só o mínimo para identificar o ticket, sem linhas de conexão entre nós.
+function FlowNode({ ticket: t, workspaceId }: { ticket: Ticket; workspaceId: string }) {
+  const navigate = useNavigate()
+  const href = `/w/${workspaceId}/tickets/${t.id}`
+  return (
+    <div className="flex cursor-pointer flex-col gap-2 rounded-xl border bg-background p-3" onClick={() => navigate(href)}>
+      <Link to={href} className="self-start font-mono text-[12px] text-muted-foreground">
+        {t.id}
+      </Link>
+      <div className="line-clamp-2 font-medium">{t.title}</div>
+      <div className="flex items-center gap-2">
+        <TicketStatusBadge status={t.status} />
+        <span className="text-muted-foreground">{stageLabel(t.stage)}</span>
       </div>
     </div>
   )
