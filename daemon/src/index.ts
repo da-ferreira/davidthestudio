@@ -12,6 +12,7 @@ import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
 import * as improvements from './improvements.ts'
 import * as tickets from './tickets.ts'
+import * as usage from './usage.ts'
 import * as ws from './workspaces.ts'
 
 const PORT = Number(process.env.STUDIO_PORT ?? 4700)
@@ -98,6 +99,7 @@ app.delete<{ Params: { id: string } }>('/api/admin/invites/:id', async (req) => 
 })
 
 app.get('/api/me/connections', async (req) => conn.connections(req.user))
+app.get('/api/me/usage', async (req) => usage.usage(req.user))
 app.post<{ Params: { agent: AgentKind } }>('/api/me/agents/:agent/login', async (req) => {
   await conn.startLogin(req.user, agent(req.params.agent))
   return conn.agentStatus(req.user, req.params.agent)

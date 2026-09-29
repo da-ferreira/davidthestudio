@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
+import { UsageButton } from '@/components/usage'
 
 export function AppSidebar() {
   const wsId = useMatch('/w/:id/*')?.params.id
@@ -163,6 +164,7 @@ function Account() {
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-border text-[12px] font-medium">{user.name[0]?.toUpperCase()}</div>
         <span className="truncate text-[14px]">{user.name}</span>
       </Link>
+      <UsageButton />
       <ThemeMenu />
       <button type="button" aria-label="Sair" title="Sair" onClick={logout} className="text-muted-foreground hover:text-foreground">
         <LogOut className="size-4" />
