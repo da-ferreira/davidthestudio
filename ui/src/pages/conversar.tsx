@@ -21,6 +21,7 @@ import { Markdown } from '@/components/markdown'
 import { agentLabel } from '@/components/ticket-status'
 import { ModelSelect } from '@/components/model-select'
 import { TicketForm } from '@/components/ticket-form'
+import { AttachButton, AttachmentPreview, UserImages, useImageAttachments } from '@/components/image-attachments'
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
@@ -95,6 +96,8 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
   const [conn, setConn] = useState<Connections | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const attachments = useImageAttachments()
+  const empty = !text.trim() && !attachments.ids.length
 
   useEffect(() => {
     api<Connections>('/me/connections').then(setConn)
@@ -102,13 +105,13 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
 
   const disconnected = !!conn && !conn[agent].connected
   const submit = async () => {
-    if (!text.trim() || busy || disconnected) return
+    if (empty || busy || disconnected || attachments.uploading) return
     setBusy(true)
     setError(null)
     try {
       const c = await api<Conversation>(`/workspaces/${workspaceId}/conversations`, {
         method: 'POST',
-        body: { text, agent, model: agent === 'codex' ? codexModel : model },
+        body: { text, images: attachments.ids, agent, model: agent === 'codex' ? codexModel : model },
       })
       onCreate(c)
       navigate(`/w/${workspaceId}/conversar/${c.id}`)
@@ -124,13 +127,20 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
         <h1 className="text-[28px] font-medium tracking-[-0.025em]">Sobre o que vamos conversar em {workspaceName ?? '…'}?</h1>
         <span className="text-muted-foreground">O agente lê os repositórios na branch padrão e o contexto do workspace. Não mexe no código: só anota melhorias e propõe tickets.</span>
       </div>
-      <div className="flex w-full max-w-[720px] flex-col gap-3 rounded-[22px] border bg-card p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]">
+      <div
+        {...attachments.dropProps}
+        className={cn(
+          'flex w-full max-w-[720px] flex-col gap-3 rounded-[22px] border bg-card p-4 pb-3 shadow-[0_4px_16px_rgba(0,0,0,.06)]',
+          attachments.dragging && 'border-ring',
+        )}
+      >
         <Textarea
           autoFocus
           placeholder="Ex.: como funciona a autenticação entre o app e a API?"
           className="min-h-[96px] resize-none border-0 bg-transparent dark:bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={attachments.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -138,7 +148,9 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
             }
           }}
         />
+        <AttachmentPreview attachments={attachments} />
         <div className="flex items-center gap-2">
+          <AttachButton attachments={attachments} />
           <Select value={agent} onValueChange={(v) => setAgent(v as AgentKind)}>
             <SelectTrigger size="sm" className="w-[140px]">
               <SelectValue />
@@ -153,7 +165,7 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
           ) : (
             <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} small className="w-[180px]" />
           )}
-          <Button size="icon-sm" className="ml-auto rounded-full" disabled={!text.trim() || busy || disconnected} onClick={submit} aria-label="Enviar">
+          <Button size="icon-sm" className="ml-auto rounded-full" disabled={empty || busy || disconnected || attachments.uploading} onClick={submit} aria-label="Enviar">
             <ArrowUp />
           </Button>
         </div>
@@ -323,8 +335,9 @@ function Message({
 }) {
   if (event.type === 'user')
     return (
-      <div className="max-w-[80%] self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
-        <Markdown text={event.text} />
+      <div className="flex max-w-[80%] flex-col gap-2 self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
+        <UserImages ids={event.images} />
+        {event.text && <Markdown text={event.text} />}
       </div>
     )
   if (event.type === 'text') return <Markdown text={event.text} className="text-body" />
@@ -494,23 +507,34 @@ function Composer({ conversationId, running }: { conversationId: string; running
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const attachments = useImageAttachments()
+  const empty = !text.trim() && !attachments.ids.length
 
   const send = () => {
-    if (!text.trim() || busy) return
+    if (empty || busy || attachments.uploading) return
     setBusy(true)
     setError(null)
-    api(`/conversations/${conversationId}/messages`, { method: 'POST', body: { text } })
-      .then(() => setText(''))
+    api(`/conversations/${conversationId}/messages`, { method: 'POST', body: { text, images: attachments.ids } })
+      .then(() => {
+        setText('')
+        attachments.clear()
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Falha ao enviar'))
       .finally(() => setBusy(false))
   }
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring">
+      <AttachmentPreview attachments={attachments} />
+      <div
+        {...attachments.dropProps}
+        className={cn('flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring', attachments.dragging && 'border-ring bg-accent/50')}
+      >
+        <AttachButton attachments={attachments} />
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={attachments.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -521,7 +545,7 @@ function Composer({ conversationId, running }: { conversationId: string; running
           className="max-h-40 min-h-9 resize-none border-0 bg-transparent dark:bg-transparent p-1 shadow-none focus-visible:ring-0"
           rows={1}
         />
-        <Button size="icon-sm" className="rounded-full" disabled={!text.trim() || busy} onClick={send} aria-label="Enviar">
+        <Button size="icon-sm" className="rounded-full" disabled={empty || busy || attachments.uploading} onClick={send} aria-label="Enviar">
           <ArrowUp />
         </Button>
       </div>

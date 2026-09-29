@@ -115,14 +115,16 @@ export type Ticket = {
 
 // sdd false: ticket rápido, começa direto na implementação.
 // repos vazio (só com spec): o agente decide.
-export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean }
+// images: ids devolvidos por POST /api/images.
+export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean; images?: string[] }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
 export type TicketDocs = Record<DocStage, string | null>
 
 // Evento do agente já traduzido pelo adaptador; é o que fica gravado e vai para a UI.
 export type AgentEvent =
-  | { type: 'user'; text: string }
+  // images: ids das imagens anexadas; ausente nos eventos antigos.
+  | { type: 'user'; text: string; images?: string[] }
   | { type: 'start'; sessionId: string; model: string }
   | { type: 'text'; text: string }
   | { type: 'tool'; id: string; name: string; input: Record<string, unknown> }
@@ -174,7 +176,12 @@ export type Conversation = {
   createdAt: string
 }
 
-export type NewConversation = { text: string; agent: AgentKind; model: string }
+export type NewConversation = { text: string; agent: AgentKind; model: string; images?: string[] }
+
+// O que vai para o agente numa mensagem: texto e ids das imagens anexadas.
+export type Prompt = { text: string; images: string[] }
+
+export type UploadedImage = { id: string }
 
 // open: aberta; ticket: virou ticket (ticketId); done: feita.
 export type ImprovementStatus = 'open' | 'ticket' | 'done'

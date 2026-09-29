@@ -1,14 +1,15 @@
 import path from 'node:path'
 import { query, type HookCallback, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentEvent, Ask, Question, Reply } from '@studio/shared'
+import type { AgentEvent, Ask, Prompt, Question, Reply } from '@studio/shared'
 import { forwardKeys, spawnInContainer, type Mount } from '../containers.ts'
+import { imageBlocks } from '../images.ts'
 import { SERVER } from '../studio-tools.ts'
 
 const MAX_OUTPUT = 4000
 
 type StartOptions = {
   cwd: string
-  prompt: string
+  prompt: Prompt
   model: string
   instructions: string
   resume?: string | null
@@ -32,13 +33,13 @@ type StartOptions = {
 
 export type Session = {
   // false quando a sessão já está encerrando; aí quem chamou retoma com resume.
-  send: (text: string) => boolean
+  send: (prompt: Prompt) => boolean
   stop: () => Promise<void>
   done: Promise<void>
 }
 
 export function start(o: StartOptions): Session {
-  const queue: string[] = []
+  const queue: Prompt[] = []
   let sent = 0
   let ended = 0
   let wake = () => {}
@@ -50,12 +51,12 @@ export function start(o: StartOptions): Session {
 
   // Uma mensagem por turno: a próxima entra quando o turno atual termina; fila vazia encerra a sessão.
   async function* input(): AsyncGenerator<SDKUserMessage> {
-    let text: string | undefined = o.prompt
-    while (text !== undefined) {
-      yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null }
+    let next: Prompt | undefined = o.prompt
+    while (next !== undefined) {
+      yield { type: 'user', message: { role: 'user', content: contentOf(next) }, parent_tool_use_id: null }
       sent++
       while (!closed && ended < sent) await new Promise<void>((r) => (wake = r))
-      text = closed ? undefined : queue.shift()
+      next = closed ? undefined : queue.shift()
     }
     closed = true
   }
@@ -101,9 +102,9 @@ export function start(o: StartOptions): Session {
   })()
 
   return {
-    send(text) {
+    send(prompt) {
       if (closed) return false
-      queue.push(text)
+      queue.push(prompt)
       return true
     },
     async stop() {
@@ -116,6 +117,12 @@ export function start(o: StartOptions): Session {
     },
     done,
   }
+}
+
+// Sem imagem vai string, como antes; com imagem, os blocos vêm antes do texto.
+function contentOf(p: Prompt) {
+  if (!p.images.length) return p.text
+  return [...imageBlocks(p.images), ...(p.text.trim() ? [{ type: 'text' as const, text: p.text }] : [])]
 }
 
 // Os args do SDK valem para o binário nativo, que no container é o `claude` da imagem.

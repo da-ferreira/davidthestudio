@@ -14,6 +14,7 @@ import { TestsPanel } from '@/components/tests-panel'
 import { StageStepper, hasSdd } from '@/components/stages'
 import { Markdown } from '@/components/markdown'
 import { CloseTicketButton } from '@/components/close-ticket'
+import { AttachButton, AttachmentPreview, UserImages, useImageAttachments } from '@/components/image-attachments'
 import { TicketStatusBadge, isActive, isClosed, agentLabel } from '@/components/ticket-status'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
@@ -325,8 +326,9 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
         {messages.map(({ seq, event }) =>
           event.type === 'user' ? (
-            <div key={seq} className="max-w-[88%] self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
-              <Markdown text={event.text} />
+            <div key={seq} className="flex max-w-[88%] flex-col gap-2 self-end rounded-[16px_16px_4px_16px] bg-accent px-3.5 py-2.5">
+              <UserImages ids={event.images} />
+              {event.text && <Markdown text={event.text} />}
             </div>
           ) : event.type === 'text' ? (
             <Markdown key={seq} text={strip(event.text)} className="text-body" />
@@ -493,24 +495,35 @@ function Composer({ ticket }: { ticket: TicketT }) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const attachments = useImageAttachments()
+  const empty = !text.trim() && !attachments.ids.length
 
   const send = () => {
-    if (!text.trim() || busy) return
+    if (empty || busy || attachments.uploading) return
     setBusy(true)
     setError(null)
-    api(`/tickets/${ticket.id}/messages`, { method: 'POST', body: { text } })
-      .then(() => setText(''))
+    api(`/tickets/${ticket.id}/messages`, { method: 'POST', body: { text, images: attachments.ids } })
+      .then(() => {
+        setText('')
+        attachments.clear()
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Falha ao enviar'))
       .finally(() => setBusy(false))
   }
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring">
+      <AttachmentPreview attachments={attachments} />
+      <div
+        {...attachments.dropProps}
+        className={cn('flex items-end gap-2 rounded-[14px] border border-border px-3 py-2 focus-within:border-ring', attachments.dragging && 'border-ring bg-accent/50')}
+      >
+        <AttachButton attachments={attachments} />
         <Textarea
           id="composer"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={attachments.onPaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -521,7 +534,7 @@ function Composer({ ticket }: { ticket: TicketT }) {
           className="max-h-40 min-h-9 resize-none border-0 bg-transparent dark:bg-transparent p-1 shadow-none focus-visible:ring-0"
           rows={1}
         />
-        <Button size="icon-sm" className="rounded-full" disabled={!text.trim() || busy} onClick={send} aria-label="Enviar">
+        <Button size="icon-sm" className="rounded-full" disabled={empty || busy || attachments.uploading} onClick={send} aria-label="Enviar">
           <ArrowUp />
         </Button>
       </div>

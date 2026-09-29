@@ -1,11 +1,13 @@
+import fs from 'node:fs'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewUser, Reply, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewUser, Reply, UploadedImage, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
 import { CONTAINERS, ensureImage, IMAGE } from './containers.ts'
 import { HttpError } from './http-error.ts'
+import * as images from './images.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
 import * as improvements from './improvements.ts'
@@ -185,8 +187,8 @@ app.post<{ Params: { id: string }; Body: NewTicket }>('/api/workspaces/:id/ticke
   tickets.createTicket(req.params.id, req.body, req.user),
 )
 app.get<{ Params: { id: string } }>('/api/tickets/:id', async (req) => tickets.getTicketDetail(req.params.id))
-app.post<{ Params: { id: string }; Body: { text: string } }>('/api/tickets/:id/messages', async (req) => {
-  tickets.sendMessage(req.params.id, req.body.text)
+app.post<{ Params: { id: string }; Body: { text: string; images?: string[] } }>('/api/tickets/:id/messages', async (req) => {
+  tickets.sendMessage(req.params.id, req.body.text, req.body.images)
   return tickets.getTicket(req.params.id)
 })
 app.post<{ Params: { id: string } }>('/api/tickets/:id/stop', async (req) => {
@@ -253,12 +255,22 @@ app.delete<{ Params: { id: string; itemId: string } }>('/api/workspaces/:id/impr
   return { ok: true }
 })
 
+// A imagem vai em base64 no JSON; 5 MB viram cerca de 6,7 MB.
+app.post<{ Body: { mediaType: string; data: string } }>('/api/images', { bodyLimit: 8 * 1024 * 1024 }, async (req): Promise<UploadedImage> => ({
+  id: images.saveImage(req.body?.mediaType, req.body?.data),
+}))
+// O id não muda de conteúdo, então o navegador pode guardar.
+app.get<{ Params: { id: string } }>('/api/images/:id', async (req, reply) => {
+  const file = images.imagePath(req.params.id)
+  return reply.type(images.mediaTypeOf(req.params.id)).header('cache-control', 'private, max-age=31536000, immutable').send(fs.createReadStream(file))
+})
+
 app.get<{ Params: { id: string } }>('/api/workspaces/:id/conversations', async (req) => conversations.listConversations(req.params.id))
 app.post<{ Params: { id: string }; Body: NewConversation }>('/api/workspaces/:id/conversations', async (req) =>
   conversations.createConversation(req.params.id, req.body ?? {}, req.user),
 )
-app.post<{ Params: { id: string }; Body: { text: string } }>('/api/conversations/:id/messages', async (req) => {
-  conversations.sendMessage(req.params.id, req.body?.text, req.user)
+app.post<{ Params: { id: string }; Body: { text: string; images?: string[] } }>('/api/conversations/:id/messages', async (req) => {
+  conversations.sendMessage(req.params.id, req.body?.text, req.user, req.body?.images)
   return { ok: true }
 })
 app.post<{ Params: { id: string } }>('/api/conversations/:id/stop', async (req) => {
