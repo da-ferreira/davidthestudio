@@ -14,7 +14,14 @@ function level(pct: number): Level {
   return pct >= 95 ? 'danger' : pct >= 80 ? 'warn' : 'ok'
 }
 
-const barColor: Record<Level, string> = { ok: 'bg-primary', warn: 'bg-warning', danger: 'bg-destructive' }
+const barColor: Record<Level, string> = { ok: 'bg-success', warn: 'bg-warning', danger: 'bg-danger' }
+const textColor: Record<Level, string> = { ok: 'text-success', warn: 'text-warning', danger: 'text-danger' }
+
+// Pior janela do provedor; null quando não há limite para mostrar.
+const peak = (p: ProviderUsage) => (p.state === 'ok' && p.windows.length ? Math.max(0, ...p.windows.map((w) => w.utilization)) : null)
+
+// Guarda a última leitura para o header não piscar vazio a cada troca de tela.
+let cached: Usage | null = null
 
 const time = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
@@ -33,19 +40,21 @@ const names = { claude: 'Claude', codex: 'Codex' }
 
 export function UsageButton() {
   const [open, setOpen] = useState(false)
-  const [usage, setUsage] = useState<Usage | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(cached)
 
   const load = () =>
     api<Usage>('/me/usage')
-      .then(setUsage)
+      .then((u) => {
+        cached = u
+        setUsage(u)
+      })
       .catch(() => {})
 
   useEffect(() => {
     load()
   }, [])
 
-  const max = usage ? Math.max(0, ...[usage.claude, usage.codex].flatMap((p) => p.windows.map((w) => w.utilization))) : 0
-  const alert = level(max)
+  const meters = usage ? (['claude', 'codex'] as const).flatMap((a) => (peak(usage[a]) === null ? [] : [{ agent: a, pct: peak(usage[a])! }])) : []
 
   return (
     <>
@@ -57,13 +66,20 @@ export function UsageButton() {
           setOpen(true)
           load()
         }}
-        className="flex items-center gap-2.5 self-start text-[14px] text-muted-foreground hover:text-foreground"
+        className="flex h-8 items-center gap-2.5 rounded-full border bg-background px-3 text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
       >
-        <span className="relative">
-          <Gauge className="size-4" />
-          {alert !== 'ok' && <span className={cn('absolute -top-0.5 -right-0.5 size-1.5 rounded-full', barColor[alert])} />}
-        </span>
-        Uso
+        <Gauge className="size-3.5" />
+        {meters.length === 0 && <span>Uso</span>}
+        {meters.map((m, i) => (
+          <span key={m.agent} className="flex items-center gap-1.5">
+            {i > 0 && <span className="mr-1 h-3.5 w-px bg-border" />}
+            <span>{names[m.agent]}</span>
+            <span className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
+              <span className={cn('block h-full rounded-full', barColor[level(m.pct)])} style={{ width: `${Math.min(100, Math.max(3, m.pct))}%` }} />
+            </span>
+            <span className={cn('font-medium tabular-nums', level(m.pct) === 'ok' ? 'text-foreground' : textColor[level(m.pct)])}>{Math.round(m.pct)}%</span>
+          </span>
+        ))}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent aria-describedby={undefined} className="gap-5 sm:max-w-md">
@@ -101,7 +117,7 @@ function Provider({ name, usage, onNavigate }: { name: string; usage: ProviderUs
                     <span className="text-[14px]">{w.label}</span>
                     {w.resetsAt && <span className="text-[12px] text-muted-foreground">{resetLabel(w.resetsAt)}</span>}
                   </div>
-                  <span className="shrink-0 text-[13px] text-muted-foreground">{Math.round(w.utilization)}% usado</span>
+                  <span className={cn('shrink-0 text-[13px] font-medium tabular-nums', textColor[level(w.utilization)])}>{Math.round(w.utilization)}% usado</span>
                 </div>
                 <Progress value={Math.min(100, Math.max(0, w.utilization))} indicatorClassName={barColor[level(w.utilization)]} />
               </div>

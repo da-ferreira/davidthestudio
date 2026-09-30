@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { UsageButton } from '@/components/usage'
 
 export function Topbar({ crumbs, actions }: { crumbs: string[]; actions?: ReactNode }) {
   return (
@@ -14,7 +15,10 @@ export function Topbar({ crumbs, actions }: { crumbs: string[]; actions?: ReactN
           </Fragment>
         ))}
       </nav>
-      <div className="ml-auto flex items-center gap-2">{actions}</div>
+      <div className="ml-auto flex items-center gap-2">
+        <UsageButton />
+        {actions}
+      </div>
     </header>
   )
 }

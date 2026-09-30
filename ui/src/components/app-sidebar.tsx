@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
-import { UsageButton } from '@/components/usage'
 
 export function AppSidebar() {
   const wsId = useMatch('/w/:id/*')?.params.id
@@ -32,7 +31,6 @@ export function AppSidebar() {
         {wsId ? <WorkspaceNav id={wsId} /> : <GlobalNav />}
       </SidebarContent>
       <SidebarFooter className="gap-3 px-4 pb-4">
-        <UsageButton />
         <Account />
         <DaemonStatus />
       </SidebarFooter>

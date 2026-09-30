@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Search } from 'lucide-react'
+import { Check, ChevronRight, Code, Eye, FileText, Flag, ListChecks, Search, X } from 'lucide-react'
 import type { Ticket, TicketStatus, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,9 +8,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Topbar } from '@/components/topbar'
-import { TicketStatusBadge, agentLabel } from '@/components/ticket-status'
-import { stageLabel } from '@/components/stages'
+import { TicketStatusBadge, agentLabel, isClosed } from '@/components/ticket-status'
+import { stageIndex, stageLabel } from '@/components/stages'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 const FILTERS: { id: string; label: string; statuses: TicketStatus[] | null }[] = [
   { id: 'todos', label: 'Todos', statuses: null },
@@ -177,13 +178,7 @@ export function Tickets() {
             </div>
           </div>
         )}
-        {flow && !!shown?.length && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-            {shown.map((t) => (
-              <FlowNode key={t.id} ticket={t} workspaceId={id!} />
-            ))}
-          </div>
-        )}
+        {flow && !!shown?.length && <Flow tickets={shown} workspaceId={id!} />}
         {!board && !flow && !!shown?.length && (
           <div className="rounded-xl border">
             <Table>
@@ -257,22 +252,101 @@ function TicketCard({ ticket: t, workspaceId }: { ticket: Ticket; workspaceId: s
   )
 }
 
-// Nó do modo Fluxo: só o mínimo para identificar o ticket, sem linhas de conexão entre nós.
-function FlowNode({ ticket: t, workspaceId }: { ticket: Ticket; workspaceId: string }) {
+const FLOW_STEPS = [
+  { label: 'Spec', icon: FileText },
+  { label: 'Plano', icon: ListChecks },
+  { label: 'Implementação', icon: Code },
+  { label: 'Revisão', icon: Eye },
+  { label: 'Entregue', icon: Flag },
+]
+
+// Encerrado ou descartado já passou por todas as etapas; o resto está na etapa atual.
+const flowIndex = (t: Ticket) => (isClosed(t) ? FLOW_STEPS.length - 1 : stageIndex(t.stage))
+
+const FLOW_GRID = 'grid grid-cols-[minmax(240px,1.4fr)_repeat(5,minmax(130px,1fr))]'
+
+// Modo Fluxo: as etapas formam o pipeline e cada ticket é uma linha que percorre esse pipeline.
+function Flow({ tickets, workspaceId }: { tickets: Ticket[]; workspaceId: string }) {
   const navigate = useNavigate()
-  const href = `/w/${workspaceId}/tickets/${t.id}`
   return (
-    <div className="flex cursor-pointer flex-col gap-2 rounded-xl border bg-background p-3" onClick={() => navigate(href)}>
-      <Link to={href} className="self-start font-mono text-[12px] text-muted-foreground">
-        {t.id}
-      </Link>
-      <div className="line-clamp-2 font-medium">{t.title}</div>
-      <div className="flex items-center gap-2">
-        <TicketStatusBadge status={t.status} />
-        <span className="text-muted-foreground">{stageLabel(t.stage)}</span>
+    <div className="overflow-x-auto rounded-2xl border bg-surface bg-[radial-gradient(var(--line-strong)_1px,transparent_1px)] bg-size-[18px_18px]">
+      <div className="flex min-w-[980px] flex-col gap-1 p-5">
+        <div className={cn(FLOW_GRID, 'mb-3')}>
+          <div className="flex items-center px-3 text-[13px] text-muted-foreground">
+            {tickets.length} {tickets.length === 1 ? 'ticket' : 'tickets'}
+          </div>
+          {FLOW_STEPS.map((s, i) => {
+            const n = tickets.filter((t) => flowIndex(t) === i).length
+            return (
+              <div key={s.label} className="relative flex items-center justify-center">
+                {i > 0 && <span className="absolute top-1/2 left-0 h-px w-1/2 bg-line-strong" />}
+                {i < FLOW_STEPS.length - 1 && <span className="absolute top-1/2 right-0 h-px w-1/2 bg-line-strong" />}
+                {i > 0 && <ChevronRight className="absolute top-1/2 left-0 size-3.5 -translate-x-1/2 -translate-y-1/2 text-faint" />}
+                <div className="relative flex items-center gap-2 rounded-xl border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.04)]">
+                  <span className="flex size-6 items-center justify-center rounded-md bg-muted text-subtle">
+                    <s.icon className="size-3.5" />
+                  </span>
+                  <span className="font-medium">{s.label}</span>
+                  <span className="text-muted-foreground tabular-nums">{n}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {tickets.map((t) => {
+          const current = flowIndex(t)
+          const href = `/w/${workspaceId}/tickets/${t.id}`
+          return (
+            <div key={t.id} className={cn(FLOW_GRID, 'group cursor-pointer rounded-xl py-1.5 hover:bg-background/70')} onClick={() => navigate(href)}>
+              <div className="relative flex min-w-0 items-center">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xl border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,.04)] group-hover:border-line-strong">
+                  <Link to={href} className="self-start font-mono text-[12px] text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+                    {t.id}
+                  </Link>
+                  <Truncated text={t.title} />
+                </div>
+                <span className="h-px w-4 shrink-0 bg-line-strong" />
+              </div>
+              {FLOW_STEPS.map((s, i) => (
+                <div key={s.label} className="relative flex items-center justify-center">
+                  <Edge className="left-0" reached={i <= current} />
+                  {i < FLOW_STEPS.length - 1 && <Edge className="right-0" reached={i < current} />}
+                  <FlowStep ticket={t} index={i} current={current} />
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
+}
+
+function Edge({ reached, className }: { reached: boolean; className: string }) {
+  return <span className={cn('absolute top-1/2 w-1/2', reached ? 'h-px bg-line-strong' : 'border-t border-dashed border-line-strong', className)} />
+}
+
+function FlowStep({ ticket: t, index, current }: { ticket: Ticket; index: number; current: number }) {
+  const last = index === FLOW_STEPS.length - 1
+  if (index < current || (last && t.status === 'closed'))
+    return (
+      <span className="relative flex size-6 items-center justify-center rounded-full border border-success/40 bg-success-soft text-success" title={last ? 'Encerrado' : 'Concluída'}>
+        <Check className="size-3.5" strokeWidth={2.6} />
+      </span>
+    )
+  if (last && t.status === 'discarded')
+    return (
+      <span className="relative flex size-6 items-center justify-center rounded-full border bg-muted text-muted-foreground" title="Descartado">
+        <X className="size-3.5" strokeWidth={2.6} />
+      </span>
+    )
+  if (index === current)
+    return (
+      <span className="relative flex items-center rounded-full bg-background">
+        <TicketStatusBadge status={t.status} />
+      </span>
+    )
+  return <span className="relative size-3 rounded-full border border-dashed border-line-strong bg-background" />
 }
 
 // Tooltip só quando o texto foi cortado.

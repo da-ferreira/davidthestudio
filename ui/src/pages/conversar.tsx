@@ -24,6 +24,7 @@ import { TicketForm } from '@/components/ticket-form'
 import { AttachButton, AttachmentPreview, UserImages, useImageAttachments } from '@/components/image-attachments'
 import { ApiError, api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { setActiveChat } from '@/lib/active-chat'
 import { cn } from '@/lib/utils'
 
 const STATUS: Record<ConversationStatus, { label: string; className: string } | null> = {
@@ -37,8 +38,14 @@ const date = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle:
 
 export function Conversar() {
   const { id, conversationId } = useParams()
+  const navigate = useNavigate()
   const [ws, setWs] = useState<Workspace | null>(null)
   const [list, setList] = useState<Conversation[]>([])
+
+  // A conversa aberta aqui é a que o balão continua nas outras telas.
+  useEffect(() => {
+    if (id && conversationId) setActiveChat({ workspaceId: id, conversationId })
+  }, [id, conversationId])
 
   useEffect(() => {
     api<Workspace[]>('/workspaces').then((all) => setWs(all.find((w) => w.id === id) ?? null))
@@ -78,17 +85,43 @@ export function Conversar() {
           ))}
         </aside>
         {conversationId ? (
-          <Chat key={conversationId} conversationId={conversationId} workspaceId={id!} onUpdate={upsert} onDelete={remove} />
+          <Chat
+            key={conversationId}
+            conversationId={conversationId}
+            workspaceId={id!}
+            onUpdate={upsert}
+            onDelete={(cid) => {
+              remove(cid)
+              setActiveChat({ workspaceId: id!, conversationId: null })
+              navigate(`/w/${id}/conversar`)
+            }}
+          />
         ) : (
-          <NewConversation workspaceId={id!} workspaceName={ws?.name} onCreate={upsert} />
+          <NewConversation
+            workspaceId={id!}
+            workspaceName={ws?.name}
+            onCreate={(c) => {
+              upsert(c)
+              navigate(`/w/${id}/conversar/${c.id}`)
+            }}
+          />
         )}
       </div>
     </div>
   )
 }
 
-function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId: string; workspaceName?: string; onCreate: (c: Conversation) => void }) {
-  const navigate = useNavigate()
+export function NewConversation({
+  workspaceId,
+  workspaceName,
+  onCreate,
+  compact,
+}: {
+  workspaceId: string
+  workspaceName?: string
+  onCreate: (c: Conversation) => void
+  compact?: boolean
+}) {
   const [text, setText] = useState('')
   const [agent, setAgent] = useState<AgentKind>('claude')
   const [model, setModel] = useState('sonnet')
@@ -114,7 +147,6 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
         body: { text, images: attachments.ids, agent, model: agent === 'codex' ? codexModel : model },
       })
       onCreate(c)
-      navigate(`/w/${workspaceId}/conversar/${c.id}`)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falhou')
       setBusy(false)
@@ -122,10 +154,10 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center gap-6 overflow-auto px-10 py-10">
+    <div className={cn('flex min-w-0 flex-1 flex-col items-center overflow-auto', compact ? 'gap-4 px-4 py-6' : 'gap-6 px-10 py-10')}>
       <div className="flex flex-col items-center gap-1.5 text-center">
-        <h1 className="text-[28px] font-medium tracking-[-0.025em]">Sobre o que vamos conversar em {workspaceName ?? '…'}?</h1>
-        <span className="text-muted-foreground">O agente lê os repositórios na branch padrão e o contexto do workspace. Não mexe no código: só anota melhorias e propõe tickets.</span>
+        <h1 className={cn('font-medium', compact ? 'text-[18px] tracking-[-0.02em]' : 'text-[28px] tracking-[-0.025em]')}>Sobre o que vamos conversar em {workspaceName ?? '…'}?</h1>
+        <span className={cn('text-muted-foreground', compact && 'text-[13px]')}>O agente lê os repositórios na branch padrão e o contexto do workspace. Não mexe no código: só anota melhorias e propõe tickets.</span>
       </div>
       <div
         {...attachments.dropProps}
@@ -152,7 +184,7 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
         <div className="flex items-center gap-2">
           <AttachButton attachments={attachments} />
           <Select value={agent} onValueChange={(v) => setAgent(v as AgentKind)}>
-            <SelectTrigger size="sm" className="w-[140px]">
+            <SelectTrigger size="sm" className="w-[140px] shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -161,9 +193,9 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
             </SelectContent>
           </Select>
           {agent === 'codex' ? (
-            <ModelSelect key="codex" agent="codex" value={codexModel} onChange={setCodexModel} small className="w-[240px]" />
+            <ModelSelect key="codex" agent="codex" value={codexModel} onChange={setCodexModel} small className={compact ? 'min-w-0 flex-1' : 'w-[240px]'} />
           ) : (
-            <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} small className="w-[180px]" />
+            <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} small className={compact ? 'min-w-0 flex-1' : 'w-[180px]'} />
           )}
           <Button size="icon-sm" className="ml-auto rounded-full" disabled={empty || busy || disconnected || attachments.uploading} onClick={submit} aria-label="Enviar">
             <ArrowUp />
@@ -183,25 +215,26 @@ function NewConversation({ workspaceId, workspaceName, onCreate }: { workspaceId
   )
 }
 
-function Chat({
+export function Chat({
   conversationId,
   workspaceId,
   onUpdate,
   onDelete,
+  compact,
 }: {
   conversationId: string
   workspaceId: string
   onUpdate: (c: Conversation) => void
   onDelete: (id: string) => void
+  compact?: boolean
 }) {
   const { user } = useAuth()
-  const navigate = useNavigate()
   const [c, setC] = useState<Conversation | null>(null)
   const [events, setEvents] = useState<TicketEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [ws, setWs] = useState<WorkspaceDetail | null>(null)
-  const end = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     api<WorkspaceDetail>(`/workspaces/${workspaceId}`).then(setWs)
@@ -222,9 +255,11 @@ function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId])
 
+  const loaded = !!c
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end' })
-  }, [events.length])
+    // Rola só a lista: scrollIntoView também rolaria a página por trás do balão.
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
+  }, [events.length, loaded])
 
   if (error) return <p className="px-8 py-7 text-destructive">{error}</p>
   if (!c) return <div className="flex-1" />
@@ -234,19 +269,18 @@ function Chat({
   const done = new Map(events.flatMap(({ event: e }) => (e.type === 'proposal_done' ? [[e.id, e.ticketId ?? null] as const] : [])))
   const canDelete = c.authorId === user.id || user.admin
   const del = () =>
-    api(`/conversations/${c.id}`, { method: 'DELETE' }).then(() => {
-      onDelete(c.id)
-      navigate(`/w/${workspaceId}/conversar`)
-    })
+    api(`/conversations/${c.id}`, { method: 'DELETE' }).then(() => onDelete(c.id))
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <div className="flex items-center gap-3 border-b border-line px-8 py-4">
-        <h1 className="min-w-0 truncate text-[18px] font-medium tracking-[-0.02em]">{c.title}</h1>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className={cn('flex items-center border-b border-line', compact ? 'gap-2 px-4 py-2.5' : 'gap-3 px-8 py-4')}>
+        <h1 className={cn('min-w-0 truncate font-medium', compact ? 'text-[14px]' : 'text-[18px] tracking-[-0.02em]')}>{c.title}</h1>
         {status && <Badge className={status.className}>{status.label}</Badge>}
-        <span className="shrink-0 text-[13px] text-muted-foreground">
-          {c.author} · {agentLabel(c)}
-        </span>
+        {!compact && (
+          <span className="shrink-0 text-[13px] text-muted-foreground">
+            {c.author} · {agentLabel(c)}
+          </span>
+        )}
         <div className="ml-auto flex gap-2">
           {c.status === 'running' && (
             <Button size="sm" variant="outline" onClick={() => api(`/conversations/${c.id}/stop`, { method: 'POST' }).catch(() => {})}>
@@ -261,8 +295,8 @@ function Chat({
           )}
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-8 py-6">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div className={cn('mx-auto flex w-full max-w-[760px] flex-col gap-4', compact ? 'px-4 py-4' : 'px-8 py-6')}>
           {events.map(({ seq, event }) => (
             event.type === 'proposal' ? (
               <ProposalCard
@@ -292,10 +326,9 @@ function Chat({
               lendo o código…
             </div>
           )}
-          <div ref={end} />
         </div>
       </div>
-      <div className="mx-auto w-full max-w-[760px] px-8 pb-6">
+      <div className={cn('mx-auto w-full max-w-[760px]', compact ? 'px-3 pb-3' : 'px-8 pb-6')}>
         {c.authorId === user.id ? (
           <Composer conversationId={c.id} running={c.status === 'running'} />
         ) : (
