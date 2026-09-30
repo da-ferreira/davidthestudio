@@ -8,7 +8,7 @@ export const COOKIE = 'studio_session'
 const SESSION_DAYS = 30
 const INVITE_DAYS = 7
 const MAX_FAILS = 5
-const LOCK_MS = 15 * 60_000
+const LOCK_MIN = 2
 
 type Row = { id: string; username: string; name: string; email: string; password: string; admin: number }
 
@@ -119,11 +119,11 @@ const fails = new Map<string, { count: number; until: number }>()
 export function login(username: string, password: string) {
   const key = username?.trim().toLowerCase() ?? ''
   const f = fails.get(key)
-  if (f && f.until > Date.now()) throw new HttpError(429, 'Muitas tentativas; espere 15 minutos')
+  if (f && f.until > Date.now()) throw new HttpError(429, `Muitas tentativas; espere ${LOCK_MIN} minutos`)
   const row = db.prepare('SELECT * FROM users WHERE username = ? AND disabled_at IS NULL').get(key) as Row | undefined
   if (!row || !checkPassword(password ?? '', row.password)) {
     const count = f && !f.until ? f.count + 1 : 1
-    fails.set(key, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 })
+    fails.set(key, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MIN * 60_000 : 0 })
     throw new HttpError(401, 'Usuário ou senha incorretos')
   }
   fails.delete(key)

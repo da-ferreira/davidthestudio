@@ -25,7 +25,10 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="px-4 pt-4 pb-2">
-        <span className="font-semibold text-[17px] tracking-[-0.03em] text-foreground">david the studio</span>
+        <span className="flex items-center gap-2">
+          <img src="/logo.png" alt="" className="size-7" />
+          <span className="font-semibold text-[17px] tracking-[-0.03em] text-foreground">david the studio</span>
+        </span>
       </SidebarHeader>
       <SidebarContent>
         {wsId ? <WorkspaceNav id={wsId} /> : <GlobalNav />}

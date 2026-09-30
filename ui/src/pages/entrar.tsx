@@ -9,7 +9,10 @@ import { ApiError, api } from '@/lib/api'
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-8 bg-background px-4 py-10">
-      <span className="text-[19px] font-semibold tracking-[-0.03em]">david the studio</span>
+      <span className="flex items-center gap-2.5">
+        <img src="/logo.png" alt="" className="size-9" />
+        <span className="text-[19px] font-semibold tracking-[-0.03em]">david the studio</span>
+      </span>
       <div className="flex w-full max-w-[380px] flex-col gap-6 rounded-[18px] border p-7 shadow-[0_4px_16px_rgba(0,0,0,.05)]">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-[20px] font-medium tracking-[-0.02em]">{title}</h1>
