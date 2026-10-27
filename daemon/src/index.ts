@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
@@ -381,6 +382,22 @@ app.get<{ Params: { id: string } }>('/ws/tickets/:id', { websocket: true }, (soc
   const off = tickets.subscribe(ticket.id, send)
   socket.on('close', off)
 })
+
+// No app do Mac não há Caddy: o próprio daemon entrega a tela já compilada.
+const UI_DIR = process.env.STUDIO_UI_DIR
+if (UI_DIR) {
+  const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.json': 'application/json' }
+  app.get('/*', async (req, reply) => {
+    if (req.url.startsWith('/api/') || req.url.startsWith('/ws/')) throw new HttpError(404, 'Não encontrado')
+    const rel = path.normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '')
+    let file = path.join(UI_DIR, rel)
+    // Rotas da tela (ex.: /demandas/891) caem no index.html.
+    if (!file.startsWith(UI_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(UI_DIR, 'index.html')
+    const html = file.endsWith('.html')
+    reply.header('content-type', TYPES[path.extname(file)] ?? 'application/octet-stream').header('cache-control', html ? 'no-cache' : 'public, max-age=31536000, immutable')
+    return reply.send(fs.createReadStream(file))
+  })
+}
 
 // Só localhost: o daemon roda comandos na máquina; expor fica para a instalação em servidor.
 if (CONTAINERS) {

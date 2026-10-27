@@ -4,11 +4,13 @@
   "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "pnpm --parallel --filter daemon --filter ui dev",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "app": "pnpm --filter app build"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3",
+      "electron",
       "esbuild"
     ]
   }

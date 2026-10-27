@@ -2,3 +2,4 @@ packages:
   - daemon
   - ui
   - shared
+  - app
