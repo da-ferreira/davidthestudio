@@ -146,7 +146,7 @@ export function Tutorial() {
                     Baixar HTML
                   </a>
                 </Button>
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => printSinglePage(doc))}>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => downloadPdf(t.id, doc))}>
                   <FileDown className="size-3.5" />
                   Baixar PDF
                 </Button>
@@ -241,7 +241,7 @@ export function Tutorial() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Anexar na demanda #{t.demanda?.id}?</AlertDialogTitle>
-            <AlertDialogDescription>O tutorial vai como arquivo HTML nos anexos da demanda no OpenProject, com a sua conta. Para tirar depois, só apagando o anexo por lá.</AlertDialogDescription>
+            <AlertDialogDescription>O tutorial vai em PDF e em HTML nos anexos da demanda no OpenProject, com um comentário seu apresentando os dois. Os anexos dá para apagar por lá; o comentário o OpenProject não deixa apagar.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -353,6 +353,18 @@ function ShotCard({ n, shot, disabled, uploading, onFile, onRemove, onHover }: {
 }
 
 // PDF numa página só: a página do PDF ganha a altura do documento inteiro, sem quebras.
+// No app do Mac o daemon gera o PDF; no navegador cai no diálogo de impressão.
+async function downloadPdf(id: string, doc: string) {
+  const res = await fetch(`/api/tutoriais/${id}/pdf`)
+  if (res.status === 501) return printSinglePage(doc)
+  if (!res.ok) throw new ApiError(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Não deu para gerar o PDF')
+  const name = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? 'tutorial.pdf'
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 async function printSinglePage(url: string) {
   const html = await fetch(url).then((r) => {
     if (!r.ok) throw new ApiError('Não deu para carregar o tutorial')

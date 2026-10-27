@@ -423,7 +423,8 @@ export function demandaLink(user: Owner, id: string) {
   return { id: numericId(id), url: `${c.url}/work_packages/${id}` }
 }
 
-export async function attachToDemanda(user: Owner, id: string, file: { fileName: string; contentType: string; data: string }): Promise<DemandaDetail> {
+// Devolve o link do arquivo, para citar num comentário.
+export async function uploadAttachment(user: Owner, id: string, file: { fileName: string; contentType: string; data: string }): Promise<{ fileName: string; url: string }> {
   const c = conn(user)
   if (!c) throw new HttpError(400, 'Conecte o OpenProject na tela Conexões')
   const form = new FormData()
@@ -452,6 +453,12 @@ export async function attachToDemanda(user: Owner, id: string, file: { fileName:
     } | null
     throw new HttpError(400, data?.message ?? `O OpenProject respondeu ${res.status}`)
   }
+  const a = (await res.json()) as { id: number; fileName: string }
+  return { fileName: a.fileName, url: `${c.url}/api/v3/attachments/${a.id}/content` }
+}
+
+export async function attachToDemanda(user: Owner, id: string, file: { fileName: string; contentType: string; data: string }): Promise<DemandaDetail> {
+  await uploadAttachment(user, id, file)
   return getDemanda(user, id)
 }
 

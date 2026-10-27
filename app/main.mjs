@@ -1,6 +1,7 @@
 // App do Mac: sobe o daemon (o mesmo do servidor) como processo filho e abre a tela dele numa janela.
 import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
 
@@ -32,7 +33,14 @@ function startDaemon() {
   const log = fs.openSync(LOG, 'a')
   daemon = spawn(process.execPath, [path.join(HERE, 'daemon', 'index.mjs')], {
     env: { ...process.env, PATH: shellPath(), ELECTRON_RUN_AS_NODE: '1', STUDIO_DATA: DATA, STUDIO_UI_DIR: path.join(HERE, 'ui'), STUDIO_PORT: String(PORT) },
-    stdio: ['ignore', log, log],
+    stdio: ['ignore', log, log, 'ipc'],
+  })
+  daemon.on('message', (m) => {
+    if (m?.kind !== 'pdf') return
+    renderPdf(m.html).then(
+      (pdf) => daemon?.send({ kind: 'pdf', id: m.id, pdf: pdf.toString('base64') }),
+      (e) => daemon?.send({ kind: 'pdf', id: m.id, error: e.message }),
+    )
   })
   daemon.on('exit', (code) => {
     daemon = null
@@ -41,6 +49,26 @@ function startDaemon() {
       app.quit()
     }
   })
+}
+
+// Largura do conteúdo do tutorial (760 + margens): a página do PDF fica do tamanho dele, sem sobra dos lados.
+const PDF_WIDTH = 824
+// O PDF não aceita página com mais de 200 polegadas; tutoriais mais longos viram páginas da mesma largura.
+const MAX_HEIGHT = 19_000
+
+async function renderPdf(html) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'studio-pdf-')), 'tutorial.html')
+  fs.writeFileSync(file, html)
+  const w = new BrowserWindow({ show: false, width: PDF_WIDTH, height: 1000, useContentSize: true, webPreferences: { sandbox: true } })
+  try {
+    await w.loadFile(file)
+    const height = await w.webContents.executeJavaScript('Math.ceil(document.documentElement.scrollHeight) + 2')
+    const pageHeight = height > MAX_HEIGHT ? Math.round(PDF_WIDTH * 1.414) : height
+    return await w.webContents.printToPDF({ printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 }, pageSize: { width: PDF_WIDTH / 96, height: pageHeight / 96 } })
+  } finally {
+    w.destroy()
+    fs.rmSync(path.dirname(file), { recursive: true, force: true })
+  }
 }
 
 async function waitHealth() {

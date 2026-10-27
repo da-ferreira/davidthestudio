@@ -264,11 +264,12 @@ table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{border-bottom:1px solid #efefef;padding:8px 10px;text-align:left}
 figure{margin:18px 0 22px}
 img{display:block;max-width:100%;height:auto;border:1px solid #e5e5e5;border-radius:10px}
+figure,img{break-inside:avoid}
 figcaption{color:#737373;font-size:13px;margin-top:8px}
 `
 
 // Documento autocontido: as imagens entram embutidas, para abrir offline e mandar para alguém.
-export function tutorialDocument(id: string): { html: string; fileName: string } {
+export function tutorialDocument(id: string): { html: string; fileName: string; slug: string } {
   const r = getRow(id)
   if (!r.body) throw new HttpError(409, 'O tutorial ainda não foi montado')
   const shots = JSON.parse(r.shots) as TutorialShot[]
@@ -299,7 +300,35 @@ ${body}
 </html>
 `
   const slug = r.title.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'tutorial'
-  return { html, fileName: `${slug}.html` }
+  return { html, fileName: `${slug}.html`, slug }
+}
+
+// O PDF sai do Electron (o daemon do app roda como filho dele); fora do app não há navegador para gerar.
+export const canPdf = () => !!process.send
+const pending = new Map<string, { resolve: (pdf: Buffer) => void; reject: (e: Error) => void }>()
+process.on('message', (m: { kind?: string; id: string; pdf?: string; error?: string }) => {
+  if (m?.kind !== 'pdf') return
+  const p = pending.get(m.id)
+  pending.delete(m.id)
+  if (m.pdf) p?.resolve(Buffer.from(m.pdf, 'base64'))
+  else p?.reject(new HttpError(500, m.error ?? 'Não deu para gerar o PDF'))
+})
+
+export function tutorialPdf(id: string): Promise<{ pdf: Buffer; fileName: string }> {
+  const { html, slug } = tutorialDocument(id)
+  if (!canPdf()) throw new HttpError(501, 'O PDF direto só sai no app do Mac')
+  const reqId = randomUUID()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(reqId)
+      reject(new HttpError(504, 'O PDF demorou demais'))
+    }, 60_000)
+    pending.set(reqId, {
+      resolve: (pdf) => (clearTimeout(timer), resolve({ pdf, fileName: `${slug}.pdf` })),
+      reject: (e) => (clearTimeout(timer), reject(e)),
+    })
+    process.send!({ kind: 'pdf', id: reqId, html })
+  })
 }
 
 export async function attachToDemanda(id: string, user: User): Promise<DemandaDetail> {
@@ -307,5 +336,14 @@ export async function attachToDemanda(id: string, user: User): Promise<DemandaDe
   if (!r.demanda) throw new HttpError(400, 'Este tutorial não veio de uma demanda')
   const { html, fileName } = tutorialDocument(id)
   const demanda = JSON.parse(r.demanda) as { id: string }
-  return openproject.attachToDemanda(user, demanda.id, { fileName, contentType: 'text/html', data: Buffer.from(html).toString('base64') })
+  const files = []
+  if (canPdf()) {
+    const { pdf, fileName: pdfName } = await tutorialPdf(id)
+    files.push(await openproject.uploadAttachment(user, demanda.id, { fileName: pdfName, contentType: 'application/pdf', data: pdf.toString('base64') }))
+  }
+  files.push(await openproject.uploadAttachment(user, demanda.id, { fileName, contentType: 'text/html', data: Buffer.from(html).toString('base64') }))
+  const list = files.map((f) => `- [${f.fileName}](${f.url})`).join('\n')
+  const formats = files.length > 1 ? 'em PDF e em HTML (abre no navegador)' : 'em HTML (abre no navegador)'
+  await openproject.addDemandaComment(user, demanda.id, `Segue o tutorial **${r.title}** para esta demanda, ${formats}:\n\n${list}`)
+  return openproject.getDemanda(user, demanda.id)
 }

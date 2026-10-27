@@ -184,6 +184,11 @@ app.get<{ Params: { id: string }; Querystring: { baixar?: string } }>('/api/tuto
   return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html)
 })
 
+app.get<{ Params: { id: string } }>('/api/tutoriais/:id/pdf', async (req, reply) => {
+  const { pdf, fileName } = await tutorials.tutorialPdf(req.params.id)
+  return reply.type('application/pdf').header('content-disposition', `attachment; filename="${fileName}"`).header('cache-control', 'no-store').send(pdf)
+})
+
 app.get('/api/notifications', async (req) => notifications.listNotifications(req.user.id))
 app.post<{ Body: { ids?: string[] } }>('/api/notifications/read', async (req) => {
   const external = notifications.markRead(req.user.id, req.body?.ids).filter((n) => n.source === 'openproject')
