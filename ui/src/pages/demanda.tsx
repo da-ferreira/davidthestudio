@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { BookOpen, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Plus, Sparkles, Terminal } from 'lucide-react'
-import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandasMeta, Workspace } from '@studio/shared'
+import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandaPerson, DemandasMeta, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Topbar } from '@/components/topbar'
 import { Markdown } from '@/components/markdown'
+import { MentionTextarea } from '@/components/mention-textarea'
 import { timeAgo } from '@/components/notifications'
 import { DemandaStatusBadge, DueDate, formatDate, isClosedStatus, Priority } from '@/components/demanda-badges'
 import { ApiError, api } from '@/lib/api'
@@ -171,6 +171,8 @@ export function Demanda() {
   const [busy, setBusy] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [comment, setComment] = useState('')
+  const [people, setPeople] = useState<DemandaPerson[] | null>(null)
+  const [mentions, setMentions] = useState<DemandaPerson[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [termWs, setTermWs] = useState<string | null>(null)
@@ -180,6 +182,8 @@ export function Demanda() {
   useEffect(() => {
     setD(null)
     setError(null)
+    setPeople(null)
+    setMentions([])
     api<DemandaDetail>(`/demandas/${demandaId}`)
       .then(setD)
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Falhou'))
@@ -244,11 +248,14 @@ export function Demanda() {
       await run('comment', () =>
         api<DemandaDetail>(`/demandas/${demandaId}/comentarios`, {
           method: 'POST',
-          body: { text: comment },
+          // Só quem continua no texto vira marcação.
+          body: { text: comment, mentions: mentions.filter((p) => comment.includes(`@${p.name}`)) },
         }),
       )
-    )
+    ) {
       setComment('')
+      setMentions([])
+    }
   }
 
   // O texto já escrito vira a orientação; o rascunho fica no campo para revisar antes de postar.
@@ -466,11 +473,18 @@ export function Demanda() {
               {shown.map((a) => (a.comment ? <Comment key={a.id} a={a} /> : <ChangeLine key={a.id} a={a} created={a.id === activities[0]?.id} />))}
               {d.can.comment && (
                 <div className="flex flex-col gap-2 pl-10">
-                  <Textarea
+                  <MentionTextarea
                     value={comment}
-                    onChange={(e) => setComment(e.target.value)}
+                    onValueChange={setComment}
+                    people={people}
+                    onNeedPeople={() =>
+                      api<DemandaPerson[]>(`/demandas/${demandaId}/pessoas`)
+                        .then(setPeople)
+                        .catch(() => setPeople([]))
+                    }
+                    onMention={(p) => setMentions((m) => (m.some((x) => x.id === p.id) ? m : [...m, p]))}
                     onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && sendComment()}
-                    placeholder="Escreva um comentário… (markdown, ⌘ + Enter envia)"
+                    placeholder="Escreva um comentário… (markdown, @ marca alguém, ⌘ + Enter envia)"
                     className="min-h-[88px]"
                     disabled={busy === 'comment' || busy === 'draft'}
                   />

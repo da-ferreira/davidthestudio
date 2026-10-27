@@ -45,6 +45,9 @@ export type NotificationList = { items: StudioNotification[]; unread: number }
 
 // Demandas: hoje vêm do OpenProject. ids são os da origem.
 export type DemandaRef = { id: string; name: string }
+
+// Quem dá para marcar com @ num comentário: membros do projeto da demanda.
+export type DemandaPerson = { id: string; name: string; type: 'user' | 'group' }
 export type DemandaStatus = DemandaRef & { closed: boolean; color: string | null }
 export type DemandasMeta = { statuses: DemandaStatus[]; types: DemandaRef[]; priorities: DemandaRef[]; projects: DemandaRef[] }
 

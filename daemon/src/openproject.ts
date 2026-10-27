@@ -1,4 +1,4 @@
-import type { Demanda, DemandaActivity, DemandaAttachment, DemandaDetail, DemandaEditOptions, DemandaField, DemandaPatch, DemandaPage, DemandaQuery, DemandaRef, DemandasMeta, DemandaStatus, OpenProjectStatus } from '@studio/shared'
+import type { Demanda, DemandaActivity, DemandaAttachment, DemandaDetail, DemandaEditOptions, DemandaField, DemandaPatch, DemandaPage, DemandaPerson, DemandaQuery, DemandaRef, DemandasMeta, DemandaStatus, OpenProjectStatus } from '@studio/shared'
 import { credential, dropCredential, saveCredential } from './connections.ts'
 import { db } from './db.ts'
 import { HttpError } from './http-error.ts'
@@ -406,16 +406,38 @@ export async function updateDemanda(user: Owner, id: string, p: DemandaPatch): P
   return getDemanda(user, id)
 }
 
-export async function addDemandaComment(user: Owner, id: string, text: string) {
+export async function demandaPeople(user: Owner, id: string): Promise<DemandaPerson[]> {
+  const w = await op<WorkPackage>(user, `/work_packages/${numericId(id)}`)
+  const project = lastSegment(w._links.project?.href)
+  const filters = JSON.stringify([{ member: { operator: '=', values: [project] } }, { type: { operator: '=', values: ['User', 'Group'] } }])
+  const list = await op<Collection<{ id: number; name: string; _type: string }>>(user, `/principals?filters=${encodeURIComponent(filters)}&pageSize=500`)
+  return list._embedded.elements
+    .map((p): DemandaPerson => ({ id: String(p.id), name: p.name, type: p._type === 'Group' ? 'group' : 'user' }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+}
+
+// "@Nome" de quem foi escolhido na lista vira a marcação que o OpenProject usa para notificar a pessoa.
+function withMentions(text: string, mentions: DemandaPerson[]) {
+  let out = text
+  // Vem da tela: só id numérico e nome sem caracteres de HTML entram na marcação.
+  const valid = mentions.filter((p) => /^\d+$/.test(p.id) && (p.type === 'user' || p.type === 'group') && p.name && !/["<>&]/.test(p.name))
+  for (const p of valid.sort((a, b) => b.name.length - a.name.length)) {
+    const tag = `<mention class="mention" data-id="${p.id}" data-type="${p.type}" data-text="@${p.name}">@${p.name}</mention>`
+    out = out.split(`@${p.name}`).join(tag)
+  }
+  return out
+}
+
+export async function addDemandaComment(user: Owner, id: string, text: string, mentions: DemandaPerson[] = []) {
   if (!text.trim()) throw new HttpError(400, 'Escreva o comentário')
   await op(user, `/work_packages/${numericId(id)}/activities`, {
     method: 'POST',
-    body: { comment: { raw: text } },
+    body: { comment: { raw: withMentions(text, mentions) } },
   })
 }
 
-export async function commentDemanda(user: Owner, id: string, text: string): Promise<DemandaDetail> {
-  await addDemandaComment(user, id, text)
+export async function commentDemanda(user: Owner, id: string, text: string, mentions: DemandaPerson[] = []): Promise<DemandaDetail> {
+  await addDemandaComment(user, id, text, mentions)
   return getDemanda(user, id)
 }
 

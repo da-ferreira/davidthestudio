@@ -3,7 +3,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DemandaPatch, DemandaQuery, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewTutorial, NewUser, Reply, TerminalIn, TerminalOut, UploadedImage, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DemandaPatch, DemandaPerson, DemandaQuery, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewTutorial, NewUser, Reply, TerminalIn, TerminalOut, UploadedImage, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
@@ -159,7 +159,10 @@ app.get('/api/terminal/aparencia', async () => terminals.itermLook())
 app.get<{ Params: { id: string } }>('/api/demandas/:id/opcoes', async (req) => openproject.demandaEditOptions(req.user, req.params.id))
 app.patch<{ Params: { id: string }; Body: DemandaPatch }>('/api/demandas/:id', async (req) => openproject.updateDemanda(req.user, req.params.id, req.body))
 app.post<{ Params: { id: string }; Body: { hint?: string } }>('/api/demandas/:id/rascunho', async (req) => ({ text: await draftComment(req.user, req.params.id, req.body?.hint ?? '') }))
-app.post<{ Params: { id: string }; Body: { text: string } }>('/api/demandas/:id/comentarios', async (req) => openproject.commentDemanda(req.user, req.params.id, req.body.text ?? ''))
+app.get<{ Params: { id: string } }>('/api/demandas/:id/pessoas', async (req) => openproject.demandaPeople(req.user, req.params.id))
+app.post<{ Params: { id: string }; Body: { text: string; mentions?: DemandaPerson[] } }>('/api/demandas/:id/comentarios', async (req) =>
+  openproject.commentDemanda(req.user, req.params.id, req.body.text ?? '', req.body.mentions ?? []),
+)
 app.post<{ Params: { id: string }; Body: { fileName: string; contentType: string; data: string } }>('/api/demandas/:id/anexos', { bodyLimit: 40 * 1024 * 1024 }, async (req) =>
   openproject.attachToDemanda(req.user, req.params.id, req.body),
 )
