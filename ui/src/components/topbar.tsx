@@ -6,7 +6,7 @@ import { NotificationsButton } from '@/components/notifications'
 
 export function Topbar({ crumbs, actions }: { crumbs: string[]; actions?: ReactNode }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-sidebar-border px-3">
+    <header data-topbar className="flex h-12 shrink-0 items-center gap-3 border-b border-sidebar-border px-3">
       <SidebarTrigger className="text-muted-foreground" />
       <nav className="flex items-center gap-2 text-muted-foreground">
         {crumbs.map((c, i) => (

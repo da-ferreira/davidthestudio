@@ -97,7 +97,8 @@ async function waitHealth() {
 }
 
 function openWindow(link) {
-  win = new BrowserWindow({ width: 1440, height: 900, minWidth: 960, minHeight: 600, backgroundColor: '#ffffff', title: 'david the studio' })
+  // Sem a barra de título do macOS (fica escura no modo escuro); os três botões ficam sobre a sidebar.
+  win = new BrowserWindow({ width: 1440, height: 900, minWidth: 960, minHeight: 600, backgroundColor: '#ffffff', title: 'david the studio', titleBarStyle: 'hidden', trafficLightPosition: { x: 18, y: 18 } })
   // Links de fora (OpenProject, GitHub) abrem no navegador.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (!url.startsWith(ORIGIN)) shell.openExternal(url)
