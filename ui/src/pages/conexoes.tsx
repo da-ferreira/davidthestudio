@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import type { AgentKind, AgentStatus, Connections } from '@studio/shared'
+import type { AgentKind, AgentStatus, Connections, OpenProjectStatus } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -174,6 +174,65 @@ function GithubCard({ status, load }: { status: Connections['github']; load: () 
   )
 }
 
+function OpenProjectCard() {
+  const [status, setStatus] = useState<OpenProjectStatus | null>(null)
+  const [url, setUrl] = useState('')
+  const [token, setToken] = useState('')
+  const load = () => api<OpenProjectStatus>('/me/openproject').then(setStatus)
+  const { busy, error, act } = useAct(load)
+  useEffect(() => {
+    load()
+  }, [])
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    act(() => api('/me/openproject', { method: 'PUT', body: { url, token } }).then(() => setToken('')))
+  }
+
+  if (!status) return null
+  return (
+    <Section
+      title="OpenProject"
+      badge={status.connected ? <Connected text={`Conectado · ${status.account}`} /> : <Disconnected />}
+      action={
+        status.connected && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => act(() => api('/me/openproject', { method: 'DELETE' }))}>
+            Desconectar
+          </Button>
+        )
+      }
+    >
+      <span className="text-[13px] text-muted-foreground">
+        {status.connected ? (
+          <>
+            As suas demandas e notificações vêm de <span className="font-mono text-foreground">{status.url}</span>.
+          </>
+        ) : (
+          'Traz as suas demandas e notificações para o studio.'
+        )}
+      </span>
+      {!status.connected && (
+        <form onSubmit={submit} className="flex flex-col gap-2">
+          <span className="text-[13px] text-muted-foreground">
+            Endereço do OpenProject e um token de API (no OpenProject: Minha conta → Tokens de acesso → API).
+          </span>
+          <Input type="url" name="openproject-url" autoComplete="off" placeholder="http://servidor:8080" value={url} onChange={(e) => setUrl(e.target.value)} className="font-mono" />
+          <div className="flex gap-2">
+            <Input type="password" autoComplete="new-password" placeholder="Token de API" value={token} onChange={(e) => setToken(e.target.value)} className="font-mono" />
+            <Button type="submit" size="sm" variant="outline" className="h-9" disabled={busy || !url.trim() || !token.trim()}>
+              Conectar
+            </Button>
+          </div>
+          {url.startsWith('http://') && (
+            <span className="text-[13px] text-warning">Endereço sem https: o token e o conteúdo passam sem criptografia pela rede.</span>
+          )}
+        </form>
+      )}
+      <ErrorText text={error} />
+    </Section>
+  )
+}
+
 export function Conexoes() {
   const [c, setC] = useState<Connections | null>(null)
   const load = () => api<Connections>('/me/connections').then(setC)
@@ -202,6 +261,7 @@ export function Conexoes() {
             <AgentCard agent="claude" status={c.claude} load={load} />
             <AgentCard agent="codex" status={c.codex} load={load} />
             <GithubCard status={c.github} load={load} />
+            <OpenProjectCard />
           </>
         )}
       </div>

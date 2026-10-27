@@ -27,6 +27,95 @@ export type Connections = { claude: AgentStatus; codex: AgentStatus; github: Git
 // machine: sem token próprio, o admin usa o git e o gh já autenticados na máquina.
 export type GithubStatus = { connected: boolean; account: string | null; machine: boolean }
 
+// url: endereço base do OpenProject; account: nome do usuário lá.
+export type OpenProjectStatus = { connected: boolean; url: string | null; account: string | null }
+
+// link: rota da própria tela (ticket, demanda) para onde o clique leva.
+export type StudioNotification = {
+  id: string
+  source: 'studio' | 'openproject'
+  title: string
+  body: string
+  link: string | null
+  read: boolean
+  createdAt: string
+}
+
+export type NotificationList = { items: StudioNotification[]; unread: number }
+
+// Demandas: hoje vêm do OpenProject. ids são os da origem.
+export type DemandaRef = { id: string; name: string }
+export type DemandaStatus = DemandaRef & { closed: boolean; color: string | null }
+export type DemandasMeta = { statuses: DemandaStatus[]; types: DemandaRef[]; priorities: DemandaRef[]; projects: DemandaRef[] }
+
+export type Demanda = {
+  id: number
+  subject: string
+  project: DemandaRef | null
+  type: DemandaRef | null
+  status: DemandaRef | null
+  priority: DemandaRef | null
+  // Em pessoas o id é o href do OpenProject, porque pode ser usuário, grupo ou marcador.
+  assignee: DemandaRef | null
+  responsible: DemandaRef | null
+  startDate: string | null
+  dueDate: string | null
+  percentDone: number | null
+  createdAt: string
+  updatedAt: string
+  // Endereço da demanda na origem, para abrir lá.
+  url: string
+}
+
+// Filtros da lista, iguais aos parâmetros da URL da tela.
+export type DemandaQuery = {
+  escopo?: 'atribuidas' | 'responsavel' | 'observando' | 'criadas' | 'todas'
+  situacao?: 'abertas' | 'fechadas' | 'todas'
+  status?: string
+  projeto?: string
+  tipo?: string
+  prioridade?: string
+  prazo?: 'atrasadas' | 'hoje' | 'semana' | 'sem'
+  q?: string
+  ordem?: 'atualizacao' | 'prazo' | 'prioridade' | 'id' | 'criacao'
+  pagina?: number
+}
+
+export type DemandaPage = { items: Demanda[]; total: number; pageSize: number }
+
+// comment: texto do comentário (markdown); details: mudanças de campo já descritas pela origem.
+export type DemandaActivity = { id: string; author: string | null; createdAt: string; comment: string; details: string[] }
+
+export type DemandaAttachment = { id: string; fileName: string; size: number; contentType: string; author: string | null; createdAt: string }
+
+export type DemandaDetail = Demanda & {
+  description: string
+  author: string | null
+  activities: DemandaActivity[]
+  attachments: DemandaAttachment[]
+  // Versão para o OpenProject recusar a edição se alguém mudou a demanda nesse meio-tempo.
+  lockVersion: number
+  can: { edit: boolean; comment: boolean; attach: boolean }
+  // null: o OpenProject não deixa observar esta demanda.
+  watching: boolean | null
+}
+
+export type DemandaField = 'status' | 'priority' | 'assignee' | 'responsible' | 'startDate' | 'dueDate' | 'percentDone'
+
+// Só os campos que o OpenProject deixa editar agora; options para os de escolha.
+export type DemandaEditOptions = Partial<Record<DemandaField, { options?: DemandaRef[] }>>
+
+export type DemandaPatch = {
+  lockVersion: number
+  status?: string
+  priority?: string
+  assignee?: string | null
+  responsible?: string | null
+  startDate?: string | null
+  dueDate?: string | null
+  percentDone?: number | null
+}
+
 // Formato do workspace.json na raiz do workspace.
 export type ImportResult = { workspace: Workspace; failed: { name: string; error: string }[] }
 
@@ -104,6 +193,8 @@ export type Ticket = {
   autonomous: boolean
   // repo -> URL do PR aberto pelo studio
   prs: Record<string, string>
+  // Demanda do OpenProject de onde o ticket nasceu; recebe um comentário com o link de cada PR.
+  demanda: { id: string; url: string } | null
   // Nome de quem criou.
   author: string | null
   createdAt: string
@@ -116,7 +207,7 @@ export type Ticket = {
 // sdd false: ticket rápido, começa direto na implementação.
 // repos vazio (só com spec): o agente decide.
 // images: ids devolvidos por POST /api/images.
-export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean; images?: string[] }
+export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean; images?: string[]; demanda?: string }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
 export type TicketDocs = Record<DocStage, string | null>
@@ -232,6 +323,7 @@ export type WsMessage =
   | { kind: 'conversation'; conversation: Conversation }
   | { kind: 'test'; run: TestRun }
   | { kind: 'test-output'; runId: number; chunk: string }
+  | { kind: 'notification'; notification: StudioNotification }
 
 export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
 
@@ -261,3 +353,27 @@ export type RepoDiff = {
   unpushed: number
   pr: string | null
 }
+
+// planning: o agente lista os prints; shots: esperando as imagens; writing: o agente monta o tutorial.
+export type TutorialStatus = 'planning' | 'shots' | 'writing' | 'done' | 'error'
+
+// image: id em /api/images; null enquanto a pessoa não anexou (ou decidiu pular).
+export type TutorialShot = { description: string; image: string | null }
+
+export type Tutorial = {
+  id: string
+  num: number
+  title: string
+  prompt: string
+  model: string
+  demanda: { id: string; url: string } | null
+  status: TutorialStatus
+  shots: TutorialShot[]
+  error: string | null
+  ready: boolean
+  author: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type NewTutorial = { title: string; prompt: string; model: string; demanda?: string }

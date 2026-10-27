@@ -119,11 +119,39 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
+  CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    source TEXT NOT NULL,
+    external_id TEXT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    link TEXT,
+    read_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, source, external_id)
+  );
   CREATE TABLE IF NOT EXISTS repo_envs (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     repo TEXT NOT NULL,
     content TEXT NOT NULL,
     PRIMARY KEY (workspace_id, repo)
+  );
+  CREATE TABLE IF NOT EXISTS tutorials (
+    num INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    model TEXT NOT NULL,
+    demanda TEXT,
+    context TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    shots TEXT NOT NULL DEFAULT '[]',
+    body TEXT,
+    error TEXT,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
 `)
 
@@ -137,6 +165,7 @@ if (!ticketCols.includes('gates')) db.exec("ALTER TABLE tickets ADD COLUMN gates
 if (!ticketCols.includes('created_by')) db.exec('ALTER TABLE tickets ADD COLUMN created_by TEXT REFERENCES users(id)')
 if (!ticketCols.includes('bases')) db.exec("ALTER TABLE tickets ADD COLUMN bases TEXT NOT NULL DEFAULT '{}'")
 if (!ticketCols.includes('pick_repos')) db.exec('ALTER TABLE tickets ADD COLUMN pick_repos INTEGER NOT NULL DEFAULT 0')
+if (!ticketCols.includes('demanda')) db.exec('ALTER TABLE tickets ADD COLUMN demanda TEXT')
 if (!ticketCols.includes('autonomous')) db.exec('ALTER TABLE tickets ADD COLUMN autonomous INTEGER NOT NULL DEFAULT 0')
 const testCols = (db.prepare('PRAGMA table_info(test_runs)').all() as { name: string }[]).map((c) => c.name)
 if (!testCols.includes('tree')) db.exec('ALTER TABLE test_runs ADD COLUMN tree TEXT')

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useMatch } from 'react-router'
-import { ArrowLeft, FolderGit2, LayoutGrid, Lightbulb, LogOut, MessagesSquare, Monitor, Moon, Plug, Sun, Ticket, Users } from 'lucide-react'
+import { ArrowLeft, Bell, BookOpen, FolderGit2, FolderKanban, LayoutGrid, Lightbulb, LogOut, MessagesSquare, Monitor, Moon, Plug, Sun, Ticket, Users } from 'lucide-react'
 import type { Workspace } from '@studio/shared'
 import {
   Sidebar,
@@ -17,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenu
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useNotifications } from '@/lib/notifications'
 import { getTheme, setTheme, type Theme } from '@/lib/theme'
 
 export function AppSidebar() {
@@ -43,6 +44,7 @@ export function AppSidebar() {
 
 function GlobalNav() {
   const { user } = useAuth()
+  const { unread } = useNotifications()
   return (
     <SidebarGroup>
       <SidebarGroupContent>
@@ -53,6 +55,37 @@ function GlobalNav() {
                 <SidebarMenuButton isActive={isActive}>
                   <LayoutGrid />
                   Workspaces
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <NavLink to="/demandas">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive}>
+                  <FolderKanban />
+                  Demandas
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <NavLink to="/tutoriais">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive}>
+                  <BookOpen />
+                  Tutoriais
+                </SidebarMenuButton>
+              )}
+            </NavLink>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <NavLink to="/notificacoes">
+              {({ isActive }) => (
+                <SidebarMenuButton isActive={isActive}>
+                  <Bell />
+                  Notificações
+                  {unread > 0 && <span className="ml-auto text-[12px] text-muted-foreground tabular-nums">{unread}</span>}
                 </SidebarMenuButton>
               )}
             </NavLink>

@@ -1,17 +1,21 @@
 import fs from 'node:fs'
+import { Readable } from 'node:stream'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewUser, Reply, UploadedImage, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DemandaPatch, DemandaQuery, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewTutorial, NewUser, Reply, UploadedImage, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
 import { CONTAINERS, ensureImage, IMAGE } from './containers.ts'
 import { HttpError } from './http-error.ts'
 import * as images from './images.ts'
+import * as notifications from './notifications.ts'
+import * as openproject from './openproject.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
 import * as improvements from './improvements.ts'
 import * as tickets from './tickets.ts'
+import * as tutorials from './tutorials.ts'
 import * as usage from './usage.ts'
 import * as ws from './workspaces.ts'
 
@@ -129,6 +133,66 @@ app.delete('/api/me/github', async (req) => {
   conn.removeGithubToken(req.user)
   return conn.githubStatus(req.user)
 })
+app.get('/api/me/openproject', async (req) => openproject.openprojectStatus(req.user))
+app.put<{ Body: { url: string; token: string } }>('/api/me/openproject', async (req) => {
+  await openproject.saveOpenProject(req.user, req.body ?? {})
+  return openproject.openprojectStatus(req.user)
+})
+app.delete('/api/me/openproject', async (req) => {
+  openproject.removeOpenProject(req.user)
+  return openproject.openprojectStatus(req.user)
+})
+
+app.get('/api/demandas/meta', async (req) => openproject.demandasMeta(req.user))
+app.get<{ Querystring: DemandaQuery }>('/api/demandas', async (req) => openproject.listDemandas(req.user, req.query))
+app.get<{ Params: { id: string } }>('/api/demandas/:id', async (req) => openproject.getDemanda(req.user, req.params.id))
+app.get<{ Params: { id: string } }>('/api/demandas/:id/opcoes', async (req) => openproject.demandaEditOptions(req.user, req.params.id))
+app.patch<{ Params: { id: string }; Body: DemandaPatch }>('/api/demandas/:id', async (req) => openproject.updateDemanda(req.user, req.params.id, req.body))
+app.post<{ Params: { id: string }; Body: { text: string } }>('/api/demandas/:id/comentarios', async (req) => openproject.commentDemanda(req.user, req.params.id, req.body.text ?? ''))
+app.post<{ Params: { id: string }; Body: { fileName: string; contentType: string; data: string } }>('/api/demandas/:id/anexos', { bodyLimit: 40 * 1024 * 1024 }, async (req) =>
+  openproject.attachToDemanda(req.user, req.params.id, req.body),
+)
+app.post<{ Params: { id: string }; Body: { watch: boolean } }>('/api/demandas/:id/observar', async (req) => openproject.watchDemanda(req.user, req.params.id, !!req.body.watch))
+app.get<{ Params: { id: string } }>('/api/demandas/anexos/:id', async (req, reply) => {
+  const res = await openproject.downloadAttachment(req.user, req.params.id)
+  for (const h of ['content-type', 'content-disposition', 'content-length']) {
+    const v = res.headers.get(h)
+    if (v) reply.header(h, v)
+  }
+  return reply.header('cache-control', 'private, max-age=3600').send(Readable.fromWeb(res.body as never))
+})
+
+app.get('/api/tutoriais', async () => tutorials.listTutorials())
+app.post<{ Body: NewTutorial }>('/api/tutoriais', async (req) => tutorials.createTutorial(req.body ?? {}, req.user))
+app.get<{ Params: { id: string } }>('/api/tutoriais/:id', async (req) => tutorials.getTutorial(req.params.id))
+app.delete<{ Params: { id: string } }>('/api/tutoriais/:id', async (req) => {
+  tutorials.deleteTutorial(req.params.id, req.user)
+  return { ok: true }
+})
+app.put<{ Params: { id: string; n: string }; Body: { image: string | null } }>('/api/tutoriais/:id/prints/:n', async (req) =>
+  tutorials.setShot(req.params.id, Number(req.params.n), req.body?.image ?? null, req.user),
+)
+app.post<{ Params: { id: string } }>('/api/tutoriais/:id/gerar', async (req) => tutorials.generate(req.params.id, req.user))
+app.post<{ Params: { id: string }; Body: { text: string } }>('/api/tutoriais/:id/ajuste', async (req) => tutorials.adjust(req.params.id, req.body?.text ?? '', req.user))
+app.post<{ Params: { id: string } }>('/api/tutoriais/:id/anexar', async (req) => tutorials.attachToDemanda(req.params.id, req.user))
+app.get<{ Params: { id: string }; Querystring: { baixar?: string } }>('/api/tutoriais/:id/documento', async (req, reply) => {
+  const { html, fileName } = tutorials.tutorialDocument(req.params.id)
+  if (req.query.baixar) reply.header('content-disposition', `attachment; filename="${fileName}"`)
+  // Aberto direto no studio, roda isolado da origem dele, sem script.
+  reply.header('content-security-policy', "sandbox allow-modals allow-popups allow-popups-to-escape-sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'")
+  return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html)
+})
+
+app.get('/api/notifications', async (req) => notifications.listNotifications(req.user.id))
+app.post<{ Body: { ids?: string[] } }>('/api/notifications/read', async (req) => {
+  notifications.markRead(req.user.id, req.body?.ids)
+  return notifications.listNotifications(req.user.id)
+})
+app.get('/ws/notifications', { websocket: true }, (socket, req) => {
+  const off = notifications.subscribe(req.user.id, (m) => socket.send(JSON.stringify(m)))
+  socket.on('close', off)
+})
+
 app.get('/api/workspaces', async () => ws.listWorkspaces())
 app.post<{ Body: { path: string } }>('/api/workspaces', async (req) => ws.registerWorkspace(req.body.path))
 app.post<{ Body: { name: string } }>('/api/workspaces/empty', async (req) => ws.createEmptyWorkspace(req.body.name ?? ''))

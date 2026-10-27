@@ -3,17 +3,20 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppSidebar } from '@/components/app-sidebar'
 import { ChatBubble } from '@/components/chat-bubble'
+import { NotificationsProvider } from '@/lib/notifications'
 
 export function Layout() {
   return (
     <TooltipProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="min-w-0">
-          <Outlet />
-        </SidebarInset>
-        <ChatBubble />
-      </SidebarProvider>
+      <NotificationsProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset className="min-w-0">
+            <Outlet />
+          </SidebarInset>
+          <ChatBubble />
+        </SidebarProvider>
+      </NotificationsProvider>
     </TooltipProvider>
   )
 }

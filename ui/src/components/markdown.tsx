@@ -36,6 +36,7 @@ const components: Components = {
   ),
   blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>,
   hr: () => <hr className="border-line" />,
+  img: ({ src, alt }) => <img src={src} alt={alt ?? ''} className="max-w-full rounded-[10px] border border-line" />,
   code: ({ children }) => (
     <code className="rounded-[5px] border border-line bg-surface-2 px-[5px] py-px font-mono text-[12.5px] text-body">{children}</code>
   ),

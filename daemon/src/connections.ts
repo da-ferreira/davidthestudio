@@ -24,6 +24,7 @@ const LOGIN_TIMEOUT_MS = 15 * 60_000
 const INHERITED = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN']
 
 type Owner = { id: string; admin: boolean }
+type CredentialKind = 'anthropic' | 'github' | 'openproject'
 type Env = Record<string, string>
 
 // O admin usa as pastas padrão da máquina (o login que já existe nela); os outros, uma pasta própria.
@@ -41,16 +42,16 @@ function home(user: Owner, agent: AgentKind) {
 for (const r of db.prepare('SELECT user_id, kind, secret FROM credentials').all() as { user_id: string; kind: string; secret: string }[])
   if (!isSealed(r.secret)) db.prepare('UPDATE credentials SET secret = ? WHERE user_id = ? AND kind = ?').run(seal(r.secret), r.user_id, r.kind)
 
-function credential(userId: string, kind: 'anthropic' | 'github') {
+export function credential(userId: string, kind: CredentialKind) {
   const row = db.prepare('SELECT secret, account FROM credentials WHERE user_id = ? AND kind = ?').get(userId, kind) as { secret: string; account: string } | undefined
   return row && { secret: open(row.secret), account: row.account }
 }
 
-function saveCredential(userId: string, kind: 'anthropic' | 'github', secret: string, account: string) {
+export function saveCredential(userId: string, kind: CredentialKind, secret: string, account: string) {
   db.prepare('INSERT OR REPLACE INTO credentials (user_id, kind, secret, account) VALUES (?, ?, ?, ?)').run(userId, kind, seal(secret), account)
 }
 
-function dropCredential(userId: string, kind: 'anthropic' | 'github') {
+export function dropCredential(userId: string, kind: CredentialKind) {
   db.prepare('DELETE FROM credentials WHERE user_id = ? AND kind = ?').run(userId, kind)
 }
 

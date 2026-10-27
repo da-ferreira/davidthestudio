@@ -1,5 +1,5 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, PanelRightClose, PanelRightOpen, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
 import type { AgentEvent, Ask, Reply, TestRun, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
@@ -96,6 +96,11 @@ export function Ticket() {
                 <Badge variant="outline" className="h-6 font-normal">
                   {agentLabel(ticket)}
                 </Badge>
+                {ticket.demanda && (
+                  <Link to={`/demandas/${ticket.demanda.id}`} className="whitespace-nowrap hover:text-foreground">
+                    Demanda #{ticket.demanda.id}
+                  </Link>
+                )}
                 <span className="whitespace-nowrap">criado {new Date(ticket.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
                 {!isClosed(ticket) && <AutonomousToggle ticket={ticket} />}
               </div>

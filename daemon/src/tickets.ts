@@ -12,6 +12,8 @@ import * as g from './git.ts'
 import { hasLinkedNodeModules, linkNodeModules } from './node-deps.ts'
 import { HttpError } from './http-error.ts'
 import { checkImages, IMAGES_DIR } from './images.ts'
+import { notify } from './notifications.ts'
+import * as openproject from './openproject.ts'
 import { runTests, testableRepos, testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
@@ -48,6 +50,8 @@ type Row = {
   // repo -> commit de onde a worktree partiu
   bases: string
   pick_repos: number
+  demanda: string | null
+  created_by: string | null
   author: string | null
   created_at: string
 }
@@ -71,6 +75,7 @@ const toTicket = (r: Row, summary: EventSummary): Ticket => ({
   gates: JSON.parse(r.gates),
   autonomous: !!r.autonomous,
   prs: JSON.parse(r.prs),
+  demanda: r.demanda ? JSON.parse(r.demanda) : null,
   author: r.author,
   createdAt: r.created_at,
   durationMs: summary.durationMs,
@@ -197,6 +202,7 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   const model = agent === 'codex' ? (input.model ?? '').trim() : input.model
   if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
   if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de criar o ticket`)
+  const demanda = input.demanda ? openproject.demandaLink(user, input.demanda) : null
   const gates = DOC_STAGES.filter((st) => input.gates?.includes(st))
   const stage: Stage = input.sdd === false ? 'implement' : 'spec'
   let repos = [...new Set(input.repos ?? [])]
@@ -253,9 +259,9 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   fs.mkdirSync(path.join(taskDir, DOCS_DIR))
 
   db.prepare(
-    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases, pick_repos, autonomous)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases), pick ? 1 : 0, input.autonomous ? 1 : 0)
+    `INSERT INTO tickets (num, id, workspace_id, title, description, repos, agent, model, status, branch, task_dir, stage, gates, created_by, bases, pick_repos, autonomous, demanda)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(num, id, workspaceId, title, input.description?.trim() ?? '', JSON.stringify(repos), agent, model, branch, taskDir, stage, JSON.stringify(gates), user.id, JSON.stringify(bases), pick ? 1 : 0, input.autonomous ? 1 : 0, demanda && JSON.stringify(demanda))
 
   for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
@@ -287,10 +293,22 @@ export function record(id: string, event: AgentEvent) {
   emit(id, { kind: 'event', event: { seq, at, event } })
 }
 
+// Estados em que o ticket precisa da pessoa; viram notificação para quem criou.
+const NOTIFY: Partial<Record<TicketStatus, string>> = {
+  waiting: 'espera a sua resposta',
+  approval: 'espera aprovação',
+  done: 'terminou',
+  error: 'parou com erro',
+}
+
 function setStatus(id: string, status: TicketStatus, sessionId?: string) {
   if (sessionId) db.prepare('UPDATE tickets SET session_id = ? WHERE id = ?').run(sessionId, id)
+  const before = getRow(id)
   db.prepare('UPDATE tickets SET status = ? WHERE id = ?').run(status, id)
-  emit(id, { kind: 'ticket', ticket: getTicket(id) })
+  const ticket = getTicket(id)
+  emit(id, { kind: 'ticket', ticket })
+  if (NOTIFY[status] && before.status !== status && before.created_by)
+    notify(before.created_by, { source: 'studio', title: `${id} ${NOTIFY[status]}`, body: ticket.title, link: `/w/${ticket.workspaceId}/tickets/${id}` })
 }
 
 export function sendMessage(id: string, input: string, imageIds?: string[]) {
@@ -726,6 +744,7 @@ export async function openPrs(id: string, user: User) {
   assertIdle(t)
   const env = gitEnv(user)
   const prs = { ...t.prs }
+  const opened: string[] = []
   let acted = 0
   for (const repo of t.repos) {
     const dir = path.join(t.taskDir, repo)
@@ -751,6 +770,7 @@ export async function openPrs(id: string, user: User) {
       t.description,
       docs.spec && `## Spec\n\n${docs.spec.trim()}`,
       docs.plan && `## Plano\n\n${docs.plan.trim()}`,
+      t.demanda && `Demanda no OpenProject: ${t.demanda.url}`,
       `Ticket ${t.id} do david the studio, feito com ${t.agent === 'codex' ? 'Codex' : 'Claude Code'}.`,
     ]
       .filter(Boolean)
@@ -769,8 +789,17 @@ export async function openPrs(id: string, user: User) {
       db.prepare('UPDATE tickets SET prs = ? WHERE id = ?').run(JSON.stringify(prs), id)
     }
     record(id, { type: 'note', text: `PR aberto em ${repo}`, url: prs[repo] })
+    opened.push(repo)
   }
   if (!acted) throw new HttpError(400, 'Nada para enviar: commite as mudanças primeiro')
+  if (t.demanda && opened.length) {
+    const lines = opened.map((repo) => `- ${repo}: ${prs[repo]}`).join('\n')
+    // Com o OpenProject de quem abriu o PR; se falhar, o PR continua aberto e o aviso fica no log.
+    await openproject
+      .addDemandaComment(user, t.demanda.id, `${opened.length > 1 ? 'PRs abertos' : 'PR aberto'} pelo david the studio (ticket ${t.id}):\n\n${lines}`)
+      .then(() => record(id, { type: 'note', text: `Link do PR comentado na demanda #${t.demanda!.id}`, url: t.demanda!.url }))
+      .catch((err) => record(id, { type: 'note', text: `Não deu para comentar o PR na demanda #${t.demanda!.id}: ${err instanceof Error ? err.message : err}` }))
+  }
   emit(id, { kind: 'ticket', ticket: getTicket(id) })
 }
 

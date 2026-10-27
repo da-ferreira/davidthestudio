@@ -15,6 +15,12 @@ import { Melhorias } from '@/pages/melhorias'
 import { Convite } from '@/pages/entrar'
 import { Usuarios } from '@/pages/usuarios'
 import { Conta } from '@/pages/conta'
+import { Notificacoes } from '@/pages/notificacoes'
+import { Demandas } from '@/pages/demandas'
+import { Demanda } from '@/pages/demanda'
+import { Tutoriais } from '@/pages/tutoriais'
+import { NovoTutorial } from '@/pages/novo-tutorial'
+import { Tutorial } from '@/pages/tutorial'
 import { AuthGate } from '@/components/auth-gate'
 
 // O modo Perguntar virou Conversar; links antigos continuam abrindo a conversa.
@@ -39,6 +45,12 @@ createRoot(document.getElementById('root')!).render(
           <Route path="conexoes" element={<Conexoes />} />
           <Route path="usuarios" element={<Usuarios />} />
           <Route path="conta" element={<Conta />} />
+          <Route path="notificacoes" element={<Notificacoes />} />
+          <Route path="demandas" element={<Demandas />} />
+          <Route path="demandas/:demandaId" element={<Demanda />} />
+          <Route path="tutoriais" element={<Tutoriais />} />
+          <Route path="tutoriais/novo" element={<NovoTutorial />} />
+          <Route path="tutoriais/:tutorialId" element={<Tutorial />} />
           <Route path="w/:id/tickets" element={<Tickets />} />
           <Route path="w/:id/tickets/novo" element={<NovoTicket />} />
           <Route path="w/:id/tickets/:ticketId" element={<Ticket />} />
