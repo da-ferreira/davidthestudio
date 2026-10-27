@@ -67,6 +67,8 @@ export function TerminalPanel({ query, className }: { query: string; className?:
       fontSize: 13,
       lineHeight: 1.15,
       cursorBlink: true,
+      // O addon de ligaduras usa registerCharacterJoiner, que o xterm ainda marca como API proposta.
+      allowProposedApi: true,
       scrollback: 5000,
       theme: STUDIO_THEME,
     })
@@ -84,8 +86,8 @@ export function TerminalPanel({ query, className }: { query: string; className?:
     // O iTerm2 do usuário desenha ligaduras (->, =>, !=); sem acesso ao arquivo da fonte o addon usa as mais comuns.
     try {
       term.loadAddon(new LigaturesAddon())
-    } catch {
-      // Sem ligaduras.
+    } catch (e) {
+      console.warn('Terminal sem ligaduras', e)
     }
     fit.fit()
     setState('connecting')
