@@ -56,4 +56,7 @@ run(
   ].join(' '),
   HERE,
 )
-console.log(`\nPronto: ${path.join(HERE, 'dist/mac-arm64/david the studio.app')}`)
+const APP = path.join(HERE, 'dist/mac-arm64/david the studio.app')
+// Sem certificado, o binário vem assinado como "Electron"; o macOS só registra as notificações com a assinatura no id do app.
+run(`codesign --force --deep --sign - "${APP}"`, HERE)
+console.log(`\nPronto: ${APP}`)
