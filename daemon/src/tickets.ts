@@ -889,3 +889,16 @@ export async function closeTicket(id: string, discard: boolean) {
   })
   setStatus(id, status)
 }
+
+// Para a lista de demandas: onde há um Claude rodando agora, com uma descrição curta de cada um.
+export function activeDemandas(): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  const add = (demanda: string, what: string) => (out[demanda] ??= []).push(what)
+  for (const d of term.rootTerminalDemandas()) add(d, 'terminal na raiz aberto')
+  const rows = db.prepare("SELECT id, status, json_extract(demanda, '$.id') AS demanda FROM tickets WHERE demanda IS NOT NULL").all() as { id: string; status: TicketStatus; demanda: string | number }[]
+  for (const r of rows) {
+    if (term.hasTerminal(termKey(r.id))) add(String(r.demanda), `${r.id} aberto no terminal`)
+    else if (r.status === 'running' || r.status === 'waiting') add(String(r.demanda), `${r.id} com o agente rodando`)
+  }
+  return out
+}

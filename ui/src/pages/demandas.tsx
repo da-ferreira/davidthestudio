@@ -89,6 +89,18 @@ export function Demandas() {
   const queryKey = new URLSearchParams(query).toString()
   const hasFilters = FILTER_KEYS.some((k) => k !== 'situacao' && k !== 'ordem' && params.get(k))
 
+  // Não há evento para isso na lista; uma consulta leve a cada 10 s basta.
+  const [ativas, setAtivas] = useState<Record<string, string[]>>({})
+  useEffect(() => {
+    const load = () =>
+      api<Record<string, string[]>>('/demandas/ativas')
+        .then(setAtivas)
+        .catch(() => {})
+    load()
+    const t = setInterval(load, 10_000)
+    return () => clearInterval(t)
+  }, [])
+
   useEffect(() => {
     api<DemandasMeta>('/demandas/meta')
       .then(setMeta)
@@ -228,9 +240,17 @@ export function Demandas() {
                         </a>
                       </TableCell>
                       <TableCell className="max-w-0">
-                        <Link to={`/demandas/${d.id}`} className="block truncate font-medium" onClick={(e) => e.stopPropagation()}>
-                          {d.subject}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link to={`/demandas/${d.id}`} className="truncate font-medium" onClick={(e) => e.stopPropagation()}>
+                            {d.subject}
+                          </Link>
+                          {ativas[d.id] && (
+                            <span title={`Claude rodando: ${ativas[d.id].join('; ')}`} className="flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft px-2 py-0.5 text-[12px] font-medium text-success">
+                              <span className="size-1.5 animate-pulse rounded-full bg-current" />
+                              Claude
+                            </span>
+                          )}
+                        </div>
                         <span className="block truncate text-[12.5px] text-muted-foreground">
                           {[d.project?.name, d.type?.name].filter(Boolean).join(' · ')}
                         </span>

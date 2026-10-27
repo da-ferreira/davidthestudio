@@ -159,6 +159,9 @@ export async function rootTerminal(workspaceId: string, demandaId: string, user:
   return key
 }
 
+// Demandas com o Claude aberto no terminal na raiz.
+export const rootTerminalDemandas = () => [...terms.keys()].filter((k) => k.startsWith('raiz:')).map((k) => k.slice(k.lastIndexOf(':') + 1))
+
 // "Nova sessão": esquece a conversa guardada; o próximo terminal da demanda começa do zero.
 export function resetRootSession(workspaceId: string, demandaId: string) {
   if (terms.has(rootKey(workspaceId, demandaId))) throw new HttpError(409, 'Encerre o terminal antes de começar uma sessão nova')

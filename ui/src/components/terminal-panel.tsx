@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { Power, RotateCw } from 'lucide-react'
@@ -53,6 +54,14 @@ export function TerminalPanel({ query, className }: { query: string; className?:
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(box.current!)
+    // O renderizador padrão (HTML) deixa frestas entre caracteres de bloco e afina o texto; o WebGL desenha alinhado à célula.
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      term.loadAddon(webgl)
+    } catch {
+      // Sem WebGL fica o renderizador padrão.
+    }
     fit.fit()
     setState('connecting')
     setError(null)
@@ -65,6 +74,8 @@ export function TerminalPanel({ query, className }: { query: string; className?:
       const m = JSON.parse(msg.data) as TerminalOut
       if (m.type === 'ready') {
         term.reset()
+        // O tamanho pode ter mudado antes de conectar (a fonte do iTerm2 chega depois); o Claude precisa do atual.
+        send({ type: 'resize', cols: term.cols, rows: term.rows })
         setState('open')
         term.focus()
       } else if (m.type === 'data') term.write(m.data)
