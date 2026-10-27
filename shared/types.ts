@@ -388,5 +388,8 @@ export type Tutorial = {
 
 export type NewTutorial = { title: string; prompt: string; model: string; demanda?: string }
 
-// Fonte do perfil padrão do iTerm2, para o terminal do studio ficar igual; null usa a do studio.
-export type TerminalFont = { fonts: string[]; size: number } | null
+// Cores no formato do tema do xterm.js (background, foreground, black…brightWhite).
+export type TerminalTheme = Record<string, string>
+
+// Fonte e cores do perfil padrão do iTerm2, para o terminal do studio ficar igual; null usa as do studio.
+export type TerminalLook = { fonts: string[]; size: number; theme: { light: TerminalTheme; dark: TerminalTheme } | null } | null

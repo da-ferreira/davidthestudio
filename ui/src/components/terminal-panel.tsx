@@ -4,7 +4,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { Power, RotateCw } from 'lucide-react'
-import type { TerminalFont, TerminalIn, TerminalOut } from '@studio/shared'
+import type { TerminalIn, TerminalLook, TerminalOut, TerminalTheme } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -12,13 +12,17 @@ import { cn } from '@/lib/utils'
 type State = 'connecting' | 'open' | 'exited' | 'error'
 
 const STUDIO_FONT = "'Geist Mono', ui-monospace, monospace"
+const STUDIO_THEME: TerminalTheme = { background: '#0a0a0a', foreground: '#e5e5e5', cursor: '#e5e5e5', selectionBackground: '#404040' }
+const darkMode = window.matchMedia('(prefers-color-scheme: dark)')
+
+type Look = { font: { family: string; size: number; lineHeight: number } | null; theme: { light: TerminalTheme; dark: TerminalTheme } | null }
 
 // A fonte do iTerm2 vem em nome PostScript; local() acha a fonte instalada por ele. O negrito segue o mesmo padrão de nome.
-let fontLoad: Promise<{ family: string; size: number; lineHeight: number } | null> | null = null
-function terminalFont() {
-  fontLoad ??= api<TerminalFont>('/terminal/fonte')
-    .then(async (f) => {
-      if (!f) return null
+let lookLoad: Promise<Look> | null = null
+function terminalLook() {
+  lookLoad ??= api<TerminalLook>('/terminal/aparencia')
+    .then(async (f): Promise<Look> => {
+      if (!f) return { font: null, theme: null }
       const families: string[] = []
       for (const [i, name] of f.fonts.entries()) {
         const family = `studio-terminal-${i}`
@@ -27,10 +31,10 @@ function terminalFont() {
         loaded.forEach((r, j) => r.status === 'fulfilled' && document.fonts.add(faces[j]))
         if (loaded[0].status === 'fulfilled') families.push(`"${family}"`)
       }
-      return families.length ? { family: [...families, STUDIO_FONT].join(', '), size: f.size, lineHeight: 1 } : null
+      return { font: families.length ? { family: [...families, STUDIO_FONT].join(', '), size: f.size, lineHeight: 1 } : null, theme: f.theme }
     })
-    .catch(() => null)
-  return fontLoad
+    .catch(() => ({ font: null, theme: null }))
+  return lookLoad
 }
 
 // O Claude interativo de verdade, rodando no daemon. Sair da tela não fecha o processo;
@@ -41,6 +45,7 @@ export function TerminalPanel({ query, className }: { query: string; className?:
   const [state, setState] = useState<State>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const [background, setBackground] = useState(STUDIO_THEME.background)
 
   useEffect(() => {
     const term = new Terminal({
@@ -49,7 +54,7 @@ export function TerminalPanel({ query, className }: { query: string; className?:
       lineHeight: 1.15,
       cursorBlink: true,
       scrollback: 5000,
-      theme: { background: '#0a0a0a', foreground: '#e5e5e5', cursor: '#e5e5e5', selectionBackground: '#404040' },
+      theme: STUDIO_THEME,
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -92,11 +97,21 @@ export function TerminalPanel({ query, className }: { query: string; className?:
     const observer = new ResizeObserver(() => fit.fit())
     observer.observe(box.current!)
     let disposed = false
+    let applyTheme = () => {}
     // A fonte pode chegar depois da primeira medida; refaz com a largura certa do caractere.
-    terminalFont().then(async (font) => {
+    terminalLook().then(async ({ font, theme }) => {
       await document.fonts.ready
       if (disposed) return
       if (font) Object.assign(term.options, { fontFamily: font.family, fontSize: font.size, lineHeight: font.lineHeight })
+      if (theme) {
+        // Como o iTerm2: as cores do modo claro ou escuro, acompanhando o macOS.
+        applyTheme = () => {
+          term.options.theme = darkMode.matches ? theme.dark : theme.light
+          setBackground(term.options.theme.background!)
+        }
+        applyTheme()
+        darkMode.addEventListener('change', applyTheme)
+      }
       fit.fit()
     })
 
@@ -119,6 +134,7 @@ export function TerminalPanel({ query, className }: { query: string; className?:
 
     return () => {
       disposed = true
+      darkMode.removeEventListener('change', applyTheme)
       observer.disconnect()
       input.dispose()
       resized.dispose()
@@ -155,7 +171,7 @@ export function TerminalPanel({ query, className }: { query: string; className?:
           )}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-[14px] border border-line bg-[#0a0a0a] p-2.5">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-[14px] border border-line p-2.5" style={{ background }}>
         <div ref={box} className="size-full" />
       </div>
     </div>

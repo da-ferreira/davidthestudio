@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import * as pty from 'node-pty'
-import type { TerminalFont, TerminalOut, User } from '@studio/shared'
+import type { TerminalLook, TerminalOut, User } from '@studio/shared'
 import { claudeEnv } from './connections.ts'
 import { CONTAINERS } from './containers.ts'
 import { db } from './db.ts'
@@ -168,8 +168,32 @@ export function resetRootSession(workspaceId: string, demandaId: string) {
   db.prepare('DELETE FROM root_terminals WHERE workspace_id = ? AND demanda_id = ?').run(workspaceId, demandaId)
 }
 
-// Lê o perfil padrão do iTerm2 ("JetBrainsMono-Regular 13"). Os nomes são PostScript; a tela carrega com local().
-export function itermFont(): TerminalFont {
+const ANSI = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite']
+const THEME_KEYS: Record<string, string> = {
+  background: 'Background Color',
+  foreground: 'Foreground Color',
+  cursor: 'Cursor Color',
+  cursorAccent: 'Cursor Text Color',
+  selectionBackground: 'Selection Color',
+  selectionForeground: 'Selected Text Color',
+  ...Object.fromEntries(ANSI.map((name, i) => [name, `Ansi ${i} Color`])),
+}
+
+type ItermColor = { 'Red Component': number; 'Green Component': number; 'Blue Component': number }
+const hex = (c: ItermColor) =>
+  '#' + [c['Red Component'], c['Green Component'], c['Blue Component']].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('')
+
+function itermTheme(p: Record<string, unknown>, suffix: string) {
+  const theme: Record<string, string> = {}
+  for (const [name, key] of Object.entries(THEME_KEYS)) {
+    const c = (p[`${key}${suffix}`] ?? p[key]) as ItermColor | undefined
+    if (c && typeof c === 'object') theme[name] = hex(c)
+  }
+  return theme
+}
+
+// Lê o perfil padrão do iTerm2 ("JetBrainsMono-Regular 13" e as cores). Os nomes de fonte são PostScript; a tela carrega com local().
+export function itermLook(): TerminalLook {
   const plist = path.join(os.homedir(), 'Library/Preferences/com.googlecode.iterm2.plist')
   if (process.platform !== 'darwin' || !fs.existsSync(plist)) return null
   try {
@@ -181,7 +205,11 @@ export function itermFont(): TerminalFont {
     const normal = parse(p?.['Normal Font'])
     if (!normal) return null
     const nonAscii = p['Use Non-ASCII Font'] ? parse(p['Non Ascii Font']) : null
-    return { fonts: [normal[1], ...(nonAscii ? [nonAscii[1]] : [])], size: Number(normal[2]) }
+    // Com cores separadas por modo, o iTerm2 guarda as do escuro com o sufixo " (Dark)".
+    const separate = !!p['Use Separate Colors for Light and Dark Mode']
+    const light = itermTheme(p, separate ? ' (Light)' : '')
+    const dark = itermTheme(p, separate ? ' (Dark)' : '')
+    return { fonts: [normal[1], ...(nonAscii ? [nonAscii[1]] : [])], size: Number(normal[2]), theme: light.background && dark.background ? { light, dark } : null }
   } catch {
     return null
   }

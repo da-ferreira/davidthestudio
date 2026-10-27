@@ -155,7 +155,7 @@ app.post<{ Params: { id: string }; Body: { workspaceId: string } }>('/api/demand
   return { ok: true }
 })
 app.get('/api/demandas/ativas', async () => tickets.activeDemandas())
-app.get('/api/terminal/fonte', async () => terminals.itermFont())
+app.get('/api/terminal/aparencia', async () => terminals.itermLook())
 app.get<{ Params: { id: string } }>('/api/demandas/:id/opcoes', async (req) => openproject.demandaEditOptions(req.user, req.params.id))
 app.patch<{ Params: { id: string }; Body: DemandaPatch }>('/api/demandas/:id', async (req) => openproject.updateDemanda(req.user, req.params.id, req.body))
 app.post<{ Params: { id: string }; Body: { hint?: string } }>('/api/demandas/:id/rascunho', async (req) => ({ text: await draftComment(req.user, req.params.id, req.body?.hint ?? '') }))
