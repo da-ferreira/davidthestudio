@@ -181,6 +181,7 @@ export async function removeWorkspace(id: string) {
   deleteTickets(id)
   deleteImprovements(id)
   db.prepare('DELETE FROM repo_envs WHERE workspace_id = ?').run(id)
+  db.prepare('DELETE FROM root_terminals WHERE workspace_id = ?').run(id)
   db.prepare('DELETE FROM workspaces WHERE id = ?').run(id)
 }
 

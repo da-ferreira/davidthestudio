@@ -108,6 +108,7 @@ type WorkPackage = {
   startDate?: string | null
   dueDate?: string | null
   date?: string | null
+  duration?: string | null
   percentageDone?: number | null
   lockVersion: number
   createdAt: string
@@ -133,6 +134,7 @@ const toDemanda = (base: string, w: WorkPackage): Demanda => ({
   // Marcos (milestones) têm só "date".
   startDate: w.startDate ?? w.date ?? null,
   dueDate: w.dueDate ?? w.date ?? null,
+  durationDays: Number(w.duration?.match(/^P(\d+)D$/)?.[1] ?? NaN) || null,
   percentDone: w.percentageDone ?? null,
   createdAt: w.createdAt,
   updatedAt: w.updatedAt,

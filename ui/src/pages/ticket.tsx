@@ -1,6 +1,6 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, PanelRightClose, PanelRightOpen, ShieldQuestion, Square, SquareTerminal } from 'lucide-react'
+import { ArrowUp, FileDiff, FileText, FlaskConical, GitBranch, PanelRightClose, PanelRightOpen, ShieldQuestion, Square, SquareTerminal, Terminal } from 'lucide-react'
 import type { AgentEvent, Ask, Reply, TestRun, Ticket as TicketT, TicketDocs, TicketEvent, Workspace, WsMessage } from '@studio/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Topbar } from '@/components/topbar'
 import { DiffPanel } from '@/components/diff-panel'
 import { DocsPanel } from '@/components/docs-panel'
+import { TerminalPanel } from '@/components/terminal-panel'
 import { TestsPanel } from '@/components/tests-panel'
 import { StageStepper, hasSdd } from '@/components/stages'
 import { Markdown } from '@/components/markdown'
@@ -20,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-const TABS = ['spec', 'plano', 'log', 'diff', 'testes']
+const TABS = ['spec', 'plano', 'log', 'terminal', 'diff', 'testes']
 
 export function Ticket() {
   const { id, ticketId } = useParams()
@@ -61,9 +62,10 @@ export function Ticket() {
 
   const [params, setParams] = useSearchParams()
   const sdd = !!ticket && hasSdd(ticket, docs)
+  const terminal = !!ticket && ticket.agent === 'claude' && !isClosed(ticket)
   const aba = params.get('aba')
   const tab =
-    TABS.includes(aba ?? '') && ((aba !== 'spec' && aba !== 'plano') || sdd)
+    TABS.includes(aba ?? '') && ((aba !== 'spec' && aba !== 'plano') || sdd) && (aba !== 'terminal' || terminal)
       ? aba!
       : ticket?.stage === 'spec'
         ? 'spec'
@@ -85,6 +87,7 @@ export function Ticket() {
                   {ticket.title}
                 </h1>
                 <TicketStatusBadge status={ticket.status} />
+                {ticket.terminal && <Badge className="bg-info-soft text-info">no terminal</Badge>}
                 {isActive(ticket) && <StopButton ticketId={ticket.id} />}
                 {!isActive(ticket) && !isClosed(ticket) && <CloseTicketButton ticket={ticket} />}
               </div>
@@ -129,6 +132,12 @@ export function Ticket() {
                     <SquareTerminal />
                     Log
                   </TabsTrigger>
+                  {terminal && (
+                    <TabsTrigger value="terminal" className="px-3">
+                      <Terminal />
+                      Terminal
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="diff" className="px-3">
                     <FileDiff />
                     Diff
@@ -149,6 +158,9 @@ export function Ticket() {
               </TabsContent>
               <TabsContent value="log" className="flex min-h-0 flex-col">
                 <LogPanel ticket={ticket} events={events} strip={strip} />
+              </TabsContent>
+              <TabsContent value="terminal" className="flex min-h-0 flex-col">
+                <TerminalPanel query={`ticket=${ticket.id}`} />
               </TabsContent>
               <TabsContent value="diff" className="flex min-h-0 flex-col">
                 <DiffPanel ticket={ticket} />
@@ -364,6 +376,8 @@ function ChatPanel({ ticket, events, strip }: { ticket: TicketT; events: TicketE
       </div>
       {isClosed(ticket) ? (
         <p className="text-center text-[13px] text-muted-foreground">Ticket encerrado. A conversa fica só para consulta.</p>
+      ) : ticket.terminal ? (
+        <p className="text-center text-[13px] text-muted-foreground">O ticket está aberto no terminal. Encerre o terminal para conversar por aqui.</p>
       ) : (
         <Composer ticket={ticket} />
       )}

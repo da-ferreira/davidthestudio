@@ -72,9 +72,9 @@ async function renderPdf(html) {
   }
 }
 
-// Com a janela em foco quem avisa é o sino da tela; fora dela, o macOS.
+// Avisa pelo macOS mesmo com a janela em foco; o sino da tela mostra o histórico.
 function showNotification({ id, title, body, link }) {
-  if (win?.isFocused() || !Notification.isSupported()) return
+  if (!Notification.isSupported()) return
   const n = new Notification({ title, body })
   n.on('click', () => {
     if (!win) return openWindow(link)

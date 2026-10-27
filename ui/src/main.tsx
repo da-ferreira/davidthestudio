@@ -21,6 +21,7 @@ import { Demanda } from '@/pages/demanda'
 import { Tutoriais } from '@/pages/tutoriais'
 import { NovoTutorial } from '@/pages/novo-tutorial'
 import { Tutorial } from '@/pages/tutorial'
+import { RootTerminal } from '@/pages/terminal'
 import { AuthGate } from '@/components/auth-gate'
 
 // No app do Mac a janela não tem barra de título: o CSS abre espaço para os botões da janela.
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="w/:id/tickets" element={<Tickets />} />
           <Route path="w/:id/tickets/novo" element={<NovoTicket />} />
           <Route path="w/:id/tickets/:ticketId" element={<Ticket />} />
+          <Route path="w/:id/terminal/:demanda" element={<RootTerminal />} />
           <Route path="w/:id/conversar" element={<Conversar />} />
           <Route path="w/:id/conversar/:conversationId" element={<Conversar />} />
           <Route path="w/:id/perguntar/:conversationId?" element={<RedirectPerguntar />} />

@@ -4,6 +4,7 @@ import type { DemandaDetail, Improvement, Ticket, WorkspaceDetail } from '@studi
 import { Topbar } from '@/components/topbar'
 import { TicketForm, type TicketFormValues } from '@/components/ticket-form'
 import { api } from '@/lib/api'
+import { demandaDescription } from '@/lib/demanda'
 
 export function NovoTicket() {
   const { id } = useParams()
@@ -33,8 +34,7 @@ export function NovoTicket() {
     if (!demandaId) return
     api<DemandaDetail>(`/demandas/${demandaId}`)
       .then((d) => {
-        // O agente não acessa o OpenProject: as imagens viram uma nota e o link da demanda vai junto.
-        const text = d.description.replace(/!\[([^\]]*)\]\(\/api\/demandas\/anexos\/\d+\)/g, (_, alt) => `(imagem na demanda${alt ? `: ${alt}` : ''})`).trim()
+        const text = demandaDescription(d)
         setInitial({ title: d.subject, description: [text, `Demanda #${d.id} no OpenProject: ${d.url}`].filter(Boolean).join('\n\n') })
       })
       .catch(() => setInitial(null))
@@ -59,7 +59,7 @@ export function NovoTicket() {
             // Best-effort: a melhoria pode ter sido apagada nesse meio-tempo; não desfaz o ticket criado.
             await api(`/workspaces/${id}/improvements/${melhoriaId}`, { method: 'PUT', body: { status: 'ticket', ticketId: t.id } }).catch(() => {})
           }
-          navigate(`/w/${id}/tickets/${t.id}`)
+          navigate(`/w/${id}/tickets/${t.id}${body.terminal ? '?aba=terminal' : ''}`)
         }}
       />
     </>

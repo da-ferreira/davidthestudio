@@ -153,6 +153,14 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
+  CREATE TABLE IF NOT EXISTS root_terminals (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    demanda_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (workspace_id, demanda_id)
+  );
 `)
 
 // Colunas acrescentadas depois da criação da tabela.

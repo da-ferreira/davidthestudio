@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { BookOpen, ChevronDown, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, Paperclip, Plus, Sparkles } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Plus, Sparkles, Terminal } from 'lucide-react'
 import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandasMeta, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,6 +14,7 @@ import { Markdown } from '@/components/markdown'
 import { timeAgo } from '@/components/notifications'
 import { DemandaStatusBadge, DueDate, formatDate, isClosedStatus, Priority } from '@/components/demanda-badges'
 import { ApiError, api } from '@/lib/api'
+import { demandaMarkdown } from '@/lib/demanda'
 import { cn } from '@/lib/utils'
 
 const fileSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`)
@@ -172,6 +173,8 @@ export function Demanda() {
   const [comment, setComment] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [termWs, setTermWs] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -182,6 +185,13 @@ export function Demanda() {
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Falhou'))
     api<DemandasMeta>('/demandas/meta')
       .then(setMeta)
+      .catch(() => {})
+  }, [demandaId])
+
+  useEffect(() => {
+    setTermWs(null)
+    api<{ workspaceId: string | null }>(`/demandas/${demandaId}/terminal`)
+      .then((r) => setTermWs(r.workspaceId))
       .catch(() => {})
   }, [demandaId])
 
@@ -303,35 +313,63 @@ export function Demanda() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" variant="outline" onClick={() => navigate(`/tutoriais/novo?demanda=${d.id}`)}>
-                <BookOpen className="size-3.5" />
-                Criar tutorial
-              </Button>
-              {d.watching !== null && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy === 'watch'}
-                  title={d.watching ? 'Deixar de receber avisos desta demanda' : 'Receber avisos desta demanda'}
-                  onClick={() =>
-                    run('watch', () =>
-                      api<DemandaDetail>(`/demandas/${demandaId}/observar`, {
-                        method: 'POST',
-                        body: { watch: !d.watching },
-                      }),
-                    )
-                  }
-                >
-                  {d.watching ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                  {d.watching ? 'Deixar de observar' : 'Observar'}
-                </Button>
-              )}
-              <Button size="sm" variant="outline" asChild>
-                <a href={d.url} target="_blank" rel="noreferrer">
-                  <ExternalLink className="size-3.5" />
-                  Abrir no OpenProject
-                </a>
-              </Button>
+              <RootTerminalButton
+                workspaces={workspaces}
+                current={workspaces.find((w) => w.id === termWs) ?? null}
+                onOpen={(w) => navigate(`/w/${w}/terminal/${d.id}`)}
+                onNew={(w) =>
+                  api(`/demandas/${d.id}/terminal/nova`, { method: 'POST', body: { workspaceId: w } })
+                    .then(() => navigate(`/w/${w}/terminal/${d.id}`))
+                    .catch((e) => setActionError(e instanceof ApiError ? e.message : 'Falhou'))
+                }
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="px-2" aria-label="Mais ações">
+                    {copied ? <Check className="size-4" /> : <MoreHorizontal className="size-4" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      navigator.clipboard.writeText(demandaMarkdown(d)).then(() => {
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 1500)
+                      })
+                    }
+                  >
+                    <Copy />
+                    Copiar demanda
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => navigate(`/tutoriais/novo?demanda=${d.id}`)}>
+                    <BookOpen />
+                    Criar tutorial
+                  </DropdownMenuItem>
+                  {d.watching !== null && (
+                    <DropdownMenuItem
+                      disabled={busy === 'watch'}
+                      onSelect={() =>
+                        run('watch', () =>
+                          api<DemandaDetail>(`/demandas/${demandaId}/observar`, {
+                            method: 'POST',
+                            body: { watch: !d.watching },
+                          }),
+                        )
+                      }
+                    >
+                      {d.watching ? <EyeOff /> : <Eye />}
+                      {d.watching ? 'Deixar de observar' : 'Observar'}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <a href={d.url} target="_blank" rel="noreferrer">
+                      <ExternalLink />
+                      Abrir no OpenProject
+                    </a>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )
         }
@@ -469,7 +507,8 @@ export function Demanda() {
                 <DemandaStatusBadge status={d.status} meta={meta} />
               )}
             </Field>
-            <Field label="Prazo">
+            <Field label="Início">{options.startDate ? <DateField value={d.startDate} busy={busy === 'startDate'} onSave={(v) => save({ startDate: v })} /> : formatDate(d.startDate)}</Field>
+            <Field label="Término">
               {options.dueDate ? <DateField value={d.dueDate} busy={busy === 'dueDate'} onSave={(v) => save({ dueDate: v })} /> : <DueDate date={d.dueDate} closed={closed} />}
               {options.dueDate && d.dueDate && !closed && (
                 <span className="text-[12px]">
@@ -477,6 +516,7 @@ export function Demanda() {
                 </span>
               )}
             </Field>
+            {d.durationDays !== null && <Field label="Duração">{d.durationDays === 1 ? '1 dia útil' : `${d.durationDays} dias úteis`}</Field>}
             <Field label="Prioridade">
               {options.priority ? (
                 <ChoiceField
@@ -516,7 +556,6 @@ export function Demanda() {
                 (d.responsible?.name ?? '—')
               )}
             </Field>
-            <Field label="Início">{options.startDate ? <DateField value={d.startDate} busy={busy === 'startDate'} onSave={(v) => save({ startDate: v })} /> : formatDate(d.startDate)}</Field>
             {d.percentDone !== null && (
               <Field label="% concluído">
                 {options.percentDone ? (
@@ -545,5 +584,65 @@ export function Demanda() {
         </div>
       )}
     </>
+  )
+}
+
+// Primeira vez escolhe o workspace; depois abre direto no último usado, e a setinha troca.
+function RootTerminalButton({
+  workspaces,
+  current,
+  onOpen,
+  onNew,
+}: {
+  workspaces: Workspace[]
+  current: Workspace | null
+  onOpen: (workspaceId: string) => void
+  onNew: (workspaceId: string) => void
+}) {
+  const menu = (
+    <DropdownMenuContent align="end">
+      {current && (
+        <>
+          <DropdownMenuItem onSelect={() => onNew(current.id)}>Nova sessão em {current.name}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuLabel className="text-muted-foreground">{current ? 'Trocar de workspace' : 'Em qual workspace?'}</DropdownMenuLabel>
+      {workspaces.length === 0 && <DropdownMenuItem disabled>Nenhum workspace cadastrado</DropdownMenuItem>}
+      {workspaces.map((w) => (
+        <DropdownMenuItem key={w.id} onSelect={() => onOpen(w.id)}>
+          {w.name}
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenuContent>
+  )
+  const title = 'Abre o Claude Code na raiz do workspace, com o contexto desta demanda'
+  if (!current)
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline" title={title}>
+            <Terminal className="size-3.5" />
+            Terminal na raiz
+          </Button>
+        </DropdownMenuTrigger>
+        {menu}
+      </DropdownMenu>
+    )
+  return (
+    <div className="flex">
+      <Button size="sm" variant="outline" className="rounded-r-none" title={title} onClick={() => onOpen(current.id)}>
+        <Terminal className="size-3.5" />
+        <span className="max-w-[160px] truncate">Terminal na raiz · {current.name}</span>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="outline" className="-ml-px rounded-l-none px-1.5" aria-label="Trocar de workspace">
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        {menu}
+      </DropdownMenu>
+    </div>
   )
 }

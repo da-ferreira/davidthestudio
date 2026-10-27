@@ -128,6 +128,8 @@ async function syncRepos(r: Row) {
   } catch {}
   for (const repo of present) {
     const wt = path.join(r.dir, repo.name)
+    // Pasta que entrou no manifesto depois veio como symlink do contexto; o checkout seguiria até o repo real.
+    if (fs.lstatSync(wt, { throwIfNoEntry: false })?.isSymbolicLink()) fs.unlinkSync(wt)
     const { ref } = await g.freshBase(path.join(root, repo.name), repo.defaultBranch, env)
     if (fs.existsSync(wt)) await g.git(wt, ['checkout', '-q', '--detach', ref]).catch(() => {})
     else await g.git(path.join(root, repo.name), ['worktree', 'add', '-q', '--detach', wt, ref])

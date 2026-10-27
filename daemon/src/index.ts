@@ -3,7 +3,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import websocket from '@fastify/websocket'
-import type { AgentKind, ApiError, DemandaPatch, DemandaQuery, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewTutorial, NewUser, Reply, UploadedImage, User, WsMessage } from '@studio/shared'
+import type { AgentKind, ApiError, DemandaPatch, DemandaQuery, DocStage, Health, ImprovementPatch, NewConversation, NewImprovement, NewTicket, NewTutorial, NewUser, Reply, TerminalIn, TerminalOut, UploadedImage, User, WsMessage } from '@studio/shared'
 import * as auth from './auth.ts'
 import { startBackups } from './backup.ts'
 import * as conn from './connections.ts'
@@ -16,6 +16,7 @@ import { draftComment } from './comment-draft.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
 import * as improvements from './improvements.ts'
+import * as terminals from './terminals.ts'
 import * as tickets from './tickets.ts'
 import * as tutorials from './tutorials.ts'
 import * as usage from './usage.ts'
@@ -148,6 +149,12 @@ app.delete('/api/me/openproject', async (req) => {
 app.get('/api/demandas/meta', async (req) => openproject.demandasMeta(req.user))
 app.get<{ Querystring: DemandaQuery }>('/api/demandas', async (req) => openproject.listDemandas(req.user, req.query))
 app.get<{ Params: { id: string } }>('/api/demandas/:id', async (req) => openproject.getDemanda(req.user, req.params.id))
+app.get<{ Params: { id: string } }>('/api/demandas/:id/terminal', async (req) => ({ workspaceId: terminals.demandaWorkspace(req.params.id) }))
+app.post<{ Params: { id: string }; Body: { workspaceId: string } }>('/api/demandas/:id/terminal/nova', async (req) => {
+  terminals.resetRootSession(req.body.workspaceId, req.params.id)
+  return { ok: true }
+})
+app.get('/api/terminal/fonte', async () => terminals.itermFont())
 app.get<{ Params: { id: string } }>('/api/demandas/:id/opcoes', async (req) => openproject.demandaEditOptions(req.user, req.params.id))
 app.patch<{ Params: { id: string }; Body: DemandaPatch }>('/api/demandas/:id', async (req) => openproject.updateDemanda(req.user, req.params.id, req.body))
 app.post<{ Params: { id: string }; Body: { hint?: string } }>('/api/demandas/:id/rascunho', async (req) => ({ text: await draftComment(req.user, req.params.id, req.body?.hint ?? '') }))
@@ -388,6 +395,44 @@ app.get<{ Params: { id: string } }>('/ws/tickets/:id', { websocket: true }, (soc
   for (const run of tests.listRuns(ticket.id)) send({ kind: 'test', run })
   const off = tickets.subscribe(ticket.id, send)
   socket.on('close', off)
+})
+
+// ?ticket=STU-N abre na pasta da tarefa; ?workspace=&demanda= abre na raiz do workspace.
+// O listener de mensagens entra antes do await: o que chegar enquanto o terminal abre não se perde.
+app.get<{ Querystring: { ticket?: string; workspace?: string; demanda?: string; cols?: string; rows?: string } }>('/ws/terminal', { websocket: true }, async (socket, req) => {
+  const send = (m: TerminalOut) => socket.readyState === socket.OPEN && socket.send(JSON.stringify(m))
+  const size = { cols: Number(req.query.cols) || 120, rows: Number(req.query.rows) || 32 }
+  let key: string | null = null
+  const early: TerminalIn[] = []
+  const handle = (m: TerminalIn) => {
+    if (m.type === 'input') terminals.write(key!, m.data)
+    else if (m.type === 'resize') terminals.resize(key!, m)
+    else if (m.type === 'kill') terminals.kill(key!)
+  }
+  socket.on('message', (raw: Buffer) => {
+    let m: TerminalIn
+    try {
+      m = JSON.parse(String(raw))
+    } catch {
+      return
+    }
+    if (key) handle(m)
+    else early.push(m)
+  })
+  let off = () => {}
+  socket.on('close', () => off())
+  try {
+    const { ticket, workspace, demanda } = req.query
+    if (ticket) key = tickets.ticketTerminal(ticket, size)
+    else if (workspace && demanda) key = await terminals.rootTerminal(workspace, demanda, req.user, size)
+    else throw new HttpError(400, 'Diga o ticket ou o workspace e a demanda')
+  } catch (err) {
+    send({ type: 'error', message: err instanceof Error ? err.message : 'Falha ao abrir o terminal' })
+    return socket.close()
+  }
+  if (socket.readyState !== socket.OPEN) return
+  off = terminals.attach(key, send, size)
+  for (const m of early) handle(m)
 })
 
 // No app do Mac não há Caddy: o próprio daemon entrega a tela já compilada.

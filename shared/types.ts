@@ -60,6 +60,8 @@ export type Demanda = {
   responsible: DemandaRef | null
   startDate: string | null
   dueDate: string | null
+  // Dias úteis entre início e término, como o OpenProject calcula.
+  durationDays: number | null
   percentDone: number | null
   createdAt: string
   updatedAt: string
@@ -202,12 +204,15 @@ export type Ticket = {
   durationMs: number | null
   // Data do evento persistido mais recente; se não houver eventos, equivale a createdAt.
   updatedAt: string
+  // O Claude interativo está aberto na pasta da tarefa; enquanto isso o chat do ticket fica bloqueado.
+  terminal: boolean
 }
 
 // sdd false: ticket rápido, começa direto na implementação.
 // repos vazio (só com spec): o agente decide.
 // images: ids devolvidos por POST /api/images.
-export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean; images?: string[]; demanda?: string }
+// terminal: cria as worktrees sem rodar o agente pela tela; o pedido vira o primeiro prompt do terminal.
+export type NewTicket = { title: string; description: string; repos: string[]; agent: AgentKind; model: string; sdd: boolean; gates: DocStage[]; autonomous?: boolean; images?: string[]; demanda?: string; terminal?: boolean }
 
 // Conteúdo de spec.md e plan.md; null enquanto o agente não escreveu.
 export type TicketDocs = Record<DocStage, string | null>
@@ -326,6 +331,10 @@ export type WsMessage =
   | { kind: 'notification'; notification: StudioNotification }
   | { kind: 'notifications' }
 
+// Mensagens do WebSocket /ws/terminal. Do daemon: saída do pty, fim do processo ou erro ao abrir.
+export type TerminalOut = { type: 'ready' } | { type: 'data'; data: string } | { type: 'exit'; code: number } | { type: 'error'; message: string }
+export type TerminalIn = { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number } | { type: 'kill' }
+
 export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
 
 // Janela de limite da assinatura como o provedor informa. key: five_hour, seven_day, primary...
@@ -378,3 +387,6 @@ export type Tutorial = {
 }
 
 export type NewTutorial = { title: string; prompt: string; model: string; demanda?: string }
+
+// Fonte do perfil padrão do iTerm2, para o terminal do studio ficar igual; null usa a do studio.
+export type TerminalFont = { fonts: string[]; size: number } | null

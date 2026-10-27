@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -14,6 +15,7 @@ import { HttpError } from './http-error.ts'
 import { checkImages, IMAGES_DIR } from './images.ts'
 import { notify } from './notifications.ts'
 import * as openproject from './openproject.ts'
+import * as term from './terminals.ts'
 import { runTests, testableRepos, testsRunning } from './tests.ts'
 import { isUnified, workspaceRepos, workspaceRoot } from './workspaces.ts'
 
@@ -80,7 +82,10 @@ const toTicket = (r: Row, summary: EventSummary): Ticket => ({
   createdAt: r.created_at,
   durationMs: summary.durationMs,
   updatedAt: summary.updatedAt,
+  terminal: term.hasTerminal(termKey(r.id)),
 })
+
+const termKey = (id: string) => `ticket:${id}`
 
 const SELECT = 'SELECT t.*, u.name AS author FROM tickets t LEFT JOIN users u ON u.id = t.created_by'
 
@@ -203,8 +208,9 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
   if ((agent === 'claude' || model) && !MODEL_ID.test(model ?? '')) throw new HttpError(400, 'Modelo inválido')
   if (!(await agentStatus(user, agent)).connected) throw new HttpError(400, `Conecte o ${agent === 'codex' ? 'Codex' : 'Claude Code'} na tela Conexões antes de criar o ticket`)
   const demanda = input.demanda ? openproject.demandaLink(user, input.demanda) : null
+  if (input.terminal && agent !== 'claude') throw new HttpError(400, 'O terminal só abre com o Claude Code')
   const gates = DOC_STAGES.filter((st) => input.gates?.includes(st))
-  const stage: Stage = input.sdd === false ? 'implement' : 'spec'
+  const stage: Stage = input.sdd === false || input.terminal ? 'implement' : 'spec'
   let repos = [...new Set(input.repos ?? [])]
   // Sem repos escolhidos, o agente lê todos na spec e diz quais vai mexer; os outros saem ao aprovar.
   const pick = !repos.length
@@ -265,9 +271,11 @@ export async function createTicket(workspaceId: string, input: NewTicket, user: 
 
   for (const text of warnings) record(id, { type: 'note', text })
   const t = getTicket(id)
-  const text = t.description ? `# ${t.title}\n\n${t.description}` : t.title
+  const text = firstPrompt(t)
   record(id, { type: 'user', text, ...(images.length ? { images } : {}) })
-  run(t, { text, images })
+  // No terminal o pedido vira o primeiro prompt quando a tela do ticket abrir o Claude.
+  if (input.terminal) setStatus(id, 'done')
+  else run(t, { text, images })
   return getTicket(id)
 }
 
@@ -317,6 +325,7 @@ export function sendMessage(id: string, input: string, imageIds?: string[]) {
   if (!text && !images.length) throw new HttpError(400, 'Mensagem vazia')
   const t = getTicket(id)
   assertOpen(t)
+  assertNoTerminal(t)
   // O agente mexeria no código enquanto os testes rodam sobre ele.
   if (testsRunning(id)) throw new HttpError(409, 'Espere os testes terminarem ou pare-os')
   const s = sessions.get(id)
@@ -435,13 +444,22 @@ function owner(t: Ticket) {
   return { id: row.id, admin: !!row.admin }
 }
 
+const firstPrompt = (t: Ticket) => (t.description ? `# ${t.title}\n\n${t.description}` : t.title)
+
+const baseInstructions = (t: Ticket) => [
+  `Você está trabalhando no ticket ${t.id} do david the studio.`,
+  `Os repositórios são as subpastas ${t.repos.map((r) => `${r}/`).join(', ')} da pasta atual, já prontos na branch ${t.branch}.`,
+  `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
+  'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
+  ...linkedNodeModules(t),
+]
+
+// Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
+const extraDirs = (t: Ticket) => linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules')))
+
 function run(t: Ticket, prompt: Prompt, resume?: string | null) {
   const instructions = [
-    `Você está trabalhando no ticket ${t.id} do david the studio.`,
-    `Os repositórios são as subpastas ${t.repos.map((r) => `${r}/`).join(', ')} da pasta atual, já prontos na branch ${t.branch}.`,
-    `Todo arquivo de código fica dentro de uma dessas subpastas (ex.: ${t.repos[0]}/...); o que ficar na raiz da pasta atual não é versionado e se perde.`,
-    'Não faça commit, push nem troque de branch: o studio faz isso depois que o humano revisar o diff.',
-    ...linkedNodeModules(t),
+    ...baseInstructions(t),
     ...(t.autonomous && t.agent === 'claude' ? [AUTONOMOUS_NOTE] : []),
     t.agent === 'codex' ? CODEX_STAGES : stageInstructions(t),
   ].join('\n')
@@ -471,8 +489,7 @@ function run(t: Ticket, prompt: Prompt, resume?: string | null) {
     ...common,
     env,
     container,
-    // Ler um pacote pelo link cai no caminho real, fora da pasta da tarefa.
-    extraDirs: linkedRepos(t).map((r) => fs.realpathSync(path.join(t.taskDir, r, 'node_modules'))),
+    extraDirs: extraDirs(t),
     onAsk: (askId, ask, signal) => {
       // Lido na hora (não travado no início da sessão): ligar o modo autônomo pela tela
       // já vale para o próximo pedido, sem precisar reiniciar a sessão do agente.
@@ -581,6 +598,7 @@ export async function approveDoc(id: string, stage: DocStage) {
   assertDocStage(stage)
   const t = getTicket(id)
   assertIdle(t)
+  assertNoTerminal(t)
   if (t.stage !== stage) throw new HttpError(409, `O ticket não está na etapa de ${DOC[stage].name}`)
   if (!fs.existsSync(docPath(t, stage))) throw new HttpError(409, `O agente ainda não escreveu ${DOC[stage].the}`)
   const picked = stage === 'spec' && t.pickRepos ? await narrowRepos(t) : undefined
@@ -650,6 +668,46 @@ const isClosed = (t: Ticket) => t.status === 'closed' || t.status === 'discarded
 
 function assertOpen(t: Ticket) {
   if (isClosed(t)) throw new HttpError(409, 'O ticket está encerrado')
+}
+
+// Duas pontas na mesma sessão do Claude se atropelariam.
+function assertNoTerminal(t: Ticket) {
+  if (t.terminal) throw new HttpError(409, 'O ticket está aberto no terminal; feche o terminal para usar o chat')
+}
+
+// Abre o Claude interativo na pasta da tarefa, retomando a sessão do ticket. Se já está aberto, só devolve a chave.
+export function ticketTerminal(id: string, size: term.Size): string {
+  const key = termKey(id)
+  if (term.hasTerminal(key)) return key
+  const t = getTicket(id)
+  assertOpen(t)
+  if (t.agent !== 'claude') throw new HttpError(409, 'O terminal só abre em tickets do Claude Code')
+  if (sessions.has(id) || t.status === 'running' || t.status === 'waiting') throw new HttpError(409, 'O agente está rodando pela tela; pare-o ou espere ele terminar para abrir o terminal')
+  if (testsRunning(id)) throw new HttpError(409, 'Espere os testes terminarem ou pare-os')
+  const env = claudeEnv(owner(t))
+  const resume = t.sessionId && term.sessionExists(t.sessionId, env) ? t.sessionId : null
+  const sessionId = resume ?? randomUUID()
+  const args = [
+    ...(resume ? ['--resume', resume] : ['--session-id', sessionId]),
+    '--model', t.model,
+    '--append-system-prompt', [...baseInstructions(t), ...(isDocStage(t.stage) ? [stageInstructions(t)] : [])].join('\n'),
+    ...extraDirs(t).flatMap((d) => ['--add-dir', d]),
+    // Ticket criado para o terminal: o pedido escrito na tela é a primeira mensagem.
+    ...(t.sessionId ? [] : [firstPrompt(t)]),
+  ]
+  term.openTerminal(key, {
+    cwd: t.taskDir,
+    env,
+    args,
+    onExit: () => {
+      record(id, { type: 'note', text: 'terminal fechado' })
+      emit(id, { kind: 'ticket', ticket: getTicket(id) })
+    },
+  }, size)
+  if (sessionId !== t.sessionId) db.prepare('UPDATE tickets SET session_id = ? WHERE id = ?').run(sessionId, id)
+  record(id, { type: 'note', text: resume ? 'terminal aberto, continuando a sessão do ticket' : 'terminal aberto' })
+  emit(id, { kind: 'ticket', ticket: getTicket(id) })
+  return key
 }
 
 export function assertIdle(t: Ticket) {
@@ -808,6 +866,7 @@ export async function openPrs(id: string, user: User) {
 export async function closeTicket(id: string, discard: boolean) {
   const t = getTicket(id)
   assertIdle(t)
+  if (t.terminal) throw new HttpError(409, 'Feche o terminal antes de encerrar o ticket')
   if (testsRunning(id)) throw new HttpError(409, 'Pare os testes antes de encerrar')
   const diffs = await getDiff(id)
   const reasons = diffs.flatMap((d) => [

@@ -9,9 +9,9 @@ const ROOT = path.join(HERE, '..')
 const OUT = path.join(HERE, 'build')
 const run = (cmd, cwd = ROOT) => execSync(cmd, { cwd, stdio: 'inherit' })
 
-// Nativas (better-sqlite3) ou que trazem executável próprio (Claude, Codex): ficam em node_modules.
+// Nativas (better-sqlite3, node-pty) ou que trazem executável próprio (Claude, Codex): ficam em node_modules.
 const daemonPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'daemon/package.json'), 'utf8'))
-const EXTERNAL = ['better-sqlite3', '@anthropic-ai/claude-agent-sdk', '@openai/codex-sdk']
+const EXTERNAL = ['better-sqlite3', 'node-pty', '@anthropic-ai/claude-agent-sdk', '@openai/codex-sdk']
 const electron = JSON.parse(fs.readFileSync(path.join(HERE, 'node_modules/electron/package.json'), 'utf8')).version
 
 fs.rmSync(OUT, { recursive: true, force: true })

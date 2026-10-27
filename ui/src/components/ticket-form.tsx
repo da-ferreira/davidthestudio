@@ -47,6 +47,7 @@ export function TicketForm({
   const [sdd, setSdd] = useState(initial?.sdd ?? true)
   const [gates, setGates] = useState<DocStage[]>(initial?.gates ?? ['spec', 'plan'])
   const [autonomous, setAutonomous] = useState(initial?.autonomous ?? false)
+  const [terminalOn, setTerminalOn] = useState(initial?.terminal ?? false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const attachments = useImageAttachments()
@@ -64,12 +65,15 @@ export function TicketForm({
 
   const toggle = (name: string) => setRepos((rs) => (rs.includes(name) ? rs.filter((r) => r !== name) : [...rs, name]))
   const disconnected = !!conn && !conn[agent].connected
+  // Só o "Novo ticket" oferece o terminal; o cartão do Conversar segue rodando pela tela.
+  const terminal = layout === 'page' && agent === 'claude' && terminalOn
+  const agentPicks = sdd && !terminal
 
   async function submit() {
     setBusy(true)
     setError(null)
     try {
-      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd, gates, autonomous, images: attachments.ids })
+      await onSubmit({ title, description, repos, agent, model: agent === 'codex' ? codexModel : model, sdd: sdd && !terminal, gates, autonomous, images: attachments.ids, terminal })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -128,7 +132,7 @@ export function TicketForm({
             )
           })}
         <span className="text-[13px] text-muted-foreground">
-          {repos.length ? 'uma worktree por repositório escolhido' : sdd ? 'nenhum escolhido: o agente decide na spec' : 'escolha os repositórios afetados'}
+          {repos.length ? 'uma worktree por repositório escolhido' : agentPicks ? 'nenhum escolhido: o agente decide na spec' : 'escolha os repositórios afetados'}
         </span>
       </div>
     </div>
@@ -170,6 +174,23 @@ export function TicketForm({
           <ModelSelect key="claude" agent="claude" value={model} onChange={setModel} className="w-full" />
         )}
       </div>
+      {layout === 'page' && agent === 'claude' && (
+        <div className="flex flex-col gap-2">
+          <Label>Onde trabalhar</Label>
+          <label className="flex items-start justify-between gap-3">
+            <span className="flex flex-col gap-0.5">
+              <span className="text-[14px]">Começar no terminal</span>
+              <span className="text-[13px] text-muted-foreground">
+                {terminal
+                  ? 'Cria as worktrees e abre o Claude Code de verdade na pasta da tarefa, com o pedido como primeira mensagem.'
+                  : 'O agente roda pela tela. Dá para abrir o terminal do ticket depois, na aba Terminal.'}
+              </span>
+            </span>
+            <Switch checked={terminalOn} onCheckedChange={setTerminalOn} disabled={readOnly} />
+          </label>
+        </div>
+      )}
+      {!terminal && (
       <div className="flex flex-col gap-3">
         <Label>Etapas</Label>
         <label className="flex items-start justify-between gap-3">
@@ -199,6 +220,8 @@ export function TicketForm({
           </div>
         )}
       </div>
+      )}
+      {!terminal && (
       <div className="flex flex-col gap-2">
         <Label>Modo autônomo</Label>
         <label className="flex items-start justify-between gap-3">
@@ -211,6 +234,7 @@ export function TicketForm({
           <Switch checked={autonomous} onCheckedChange={setAutonomous} disabled={readOnly} />
         </label>
       </div>
+      )}
     </>
   )
 
@@ -223,8 +247,8 @@ export function TicketForm({
             {cancelLabel}
           </Button>
         )}
-        <Button size={card ? 'default' : 'lg'} className="flex-[2]" disabled={!title.trim() || (!repos.length && !sdd) || busy || disconnected || attachments.uploading} onClick={submit}>
-          {busy ? busyLabel : submitLabel}
+        <Button size={card ? 'default' : 'lg'} className="flex-[2]" disabled={!title.trim() || (!repos.length && !agentPicks) || busy || disconnected || attachments.uploading} onClick={submit}>
+          {busy ? busyLabel : terminal ? 'Criar e abrir o terminal' : submitLabel}
         </Button>
       </div>
     </>
