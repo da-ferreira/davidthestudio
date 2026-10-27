@@ -11,3 +11,6 @@ export function demandaMarkdown(d: DemandaDetail) {
     .filter(Boolean)
     .join('\n\n')
 }
+
+// Para colar no terminal: as marcas deixam claro para o Claude onde a demanda começa e termina.
+export const demandaClipboard = (d: DemandaDetail) => `--- inicio demanda ---\n\n${demandaMarkdown(d)}\n\n--- fim demanda ---`

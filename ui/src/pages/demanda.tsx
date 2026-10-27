@@ -14,7 +14,7 @@ import { Markdown } from '@/components/markdown'
 import { timeAgo } from '@/components/notifications'
 import { DemandaStatusBadge, DueDate, formatDate, isClosedStatus, Priority } from '@/components/demanda-badges'
 import { ApiError, api } from '@/lib/api'
-import { demandaMarkdown } from '@/lib/demanda'
+import { demandaClipboard } from '@/lib/demanda'
 import { cn } from '@/lib/utils'
 
 const fileSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`)
@@ -332,7 +332,7 @@ export function Demanda() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
                     onSelect={() =>
-                      navigator.clipboard.writeText(demandaMarkdown(d)).then(() => {
+                      navigator.clipboard.writeText(demandaClipboard(d)).then(() => {
                         setCopied(true)
                         setTimeout(() => setCopied(false), 1500)
                       })
