@@ -324,6 +324,7 @@ export type WsMessage =
   | { kind: 'test'; run: TestRun }
   | { kind: 'test-output'; runId: number; chunk: string }
   | { kind: 'notification'; notification: StudioNotification }
+  | { kind: 'notifications' }
 
 export type FileChange = { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; patch: string }
 

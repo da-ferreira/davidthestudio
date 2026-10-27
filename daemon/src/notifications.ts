@@ -23,17 +23,37 @@ export function subscribe(userId: string, fn: (m: WsMessage) => void): () => voi
 }
 
 // externalId: id na origem (OpenProject); repetir o mesmo não cria outra notificação.
-export type NewNotification = { source: StudioNotification['source']; externalId?: string; title: string; body?: string; link?: string; createdAt?: string; read?: boolean }
+// silent: grava sem avisar na hora (ex.: as antigas trazidas na primeira sincronização).
+export type NewNotification = { source: StudioNotification['source']; externalId?: string; title: string; body?: string; link?: string; createdAt?: string; read?: boolean; silent?: boolean }
 
-export function notify(userId: string, n: NewNotification) {
+const emit = (userId: string, m: WsMessage) => {
+  for (const fn of listeners.get(userId) ?? []) fn(m)
+}
+
+// Devolve true se gravou uma nova.
+export function notify(userId: string, n: NewNotification): boolean {
   const id = crypto.randomUUID()
   const createdAt = n.createdAt ?? new Date().toISOString()
   const { changes } = db
     .prepare('INSERT OR IGNORE INTO notifications (id, user_id, source, external_id, title, body, link, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, userId, n.source, n.externalId ?? null, n.title, n.body ?? '', n.link ?? null, n.read ? createdAt : null, createdAt)
-  if (!changes || n.read) return
+  if (!changes) return false
+  if (n.read || n.silent) return true
   const row = db.prepare('SELECT * FROM notifications WHERE id = ?').get(id) as Row
-  for (const fn of listeners.get(userId) ?? []) fn({ kind: 'notification', notification: toNotification(row) })
+  emit(userId, { kind: 'notification', notification: toNotification(row) })
+  return true
+}
+
+// Pede para a tela reler a lista (mudou algo que não foi uma notificação nova).
+export const refresh = (userId: string) => emit(userId, { kind: 'notifications' })
+
+// Lidas na origem: marca aqui também as que não estão mais entre as não lidas de lá.
+export function syncRead(userId: string, source: StudioNotification['source'], unreadExternalIds: string[]): boolean {
+  const keep = unreadExternalIds.length ? `AND external_id NOT IN (${unreadExternalIds.map(() => '?').join(',')})` : ''
+  const { changes } = db
+    .prepare(`UPDATE notifications SET read_at = ? WHERE user_id = ? AND source = ? AND read_at IS NULL AND external_id IS NOT NULL ${keep}`)
+    .run(new Date().toISOString(), userId, source, ...unreadExternalIds)
+  return changes > 0
 }
 
 export function listNotifications(userId: string): NotificationList {

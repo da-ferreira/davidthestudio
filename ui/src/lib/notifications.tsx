@@ -61,6 +61,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       sock = new WebSocket(`${proto}://${location.host}/ws/notifications`)
       sock.onmessage = (msg) => {
         const m = JSON.parse(msg.data) as WsMessage
+        if (m.kind === 'notifications') return void load()
         if (m.kind !== 'notification') return
         setList((l) => ({ items: [m.notification, ...l.items], unread: l.unread + 1 }))
         showSystem(m.notification)

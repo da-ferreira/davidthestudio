@@ -185,7 +185,8 @@ app.get<{ Params: { id: string }; Querystring: { baixar?: string } }>('/api/tuto
 
 app.get('/api/notifications', async (req) => notifications.listNotifications(req.user.id))
 app.post<{ Body: { ids?: string[] } }>('/api/notifications/read', async (req) => {
-  notifications.markRead(req.user.id, req.body?.ids)
+  const external = notifications.markRead(req.user.id, req.body?.ids).filter((n) => n.source === 'openproject')
+  if (external.length) openproject.markNotificationsRead(req.user, external.map((n) => n.externalId)).catch((e) => req.log.warn(`Não marcou como lida no OpenProject: ${e.message}`))
   return notifications.listNotifications(req.user.id)
 })
 app.get('/ws/notifications', { websocket: true }, (socket, req) => {
@@ -388,3 +389,4 @@ if (CONTAINERS) {
 }
 await app.listen({ port: PORT, host: HOST })
 startBackups()
+openproject.startNotificationPolling()

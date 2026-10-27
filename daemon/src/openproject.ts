@@ -1,6 +1,8 @@
 import type { Demanda, DemandaActivity, DemandaAttachment, DemandaDetail, DemandaEditOptions, DemandaField, DemandaPatch, DemandaPage, DemandaQuery, DemandaRef, DemandasMeta, DemandaStatus, OpenProjectStatus } from '@studio/shared'
 import { credential, dropCredential, saveCredential } from './connections.ts'
+import { db } from './db.ts'
 import { HttpError } from './http-error.ts'
+import { notify, refresh, syncRead } from './notifications.ts'
 
 type Owner = { id: string }
 type Conn = { url: string; token: string }
@@ -472,4 +474,74 @@ export async function downloadAttachment(user: Owner, id: string) {
   const res = await call(c, `/attachments/${id}/content`)
   if (!res.ok || !res.body) throw new HttpError(res.status === 404 ? 404 : 502, 'Não foi possível baixar o anexo')
   return res
+}
+
+// --- Notificações do OpenProject ---
+
+type OpNotification = { id: number; reason: string; createdAt: string; _links: Links }
+
+const REASONS: Record<string, string> = {
+  mentioned: 'mencionou você',
+  assigned: 'atribuiu a você',
+  responsible: 'deixou você como responsável',
+  watched: 'atualizou uma demanda que você observa',
+  commented: 'comentou',
+  created: 'criou',
+  processed: 'atualizou',
+  prioritized: 'mudou a prioridade',
+  scheduled: 'mudou as datas',
+  shared: 'compartilhou com você',
+  reminder: 'lembrete',
+}
+
+const POLL_MS = 60_000
+const UNREAD = encodeURIComponent(JSON.stringify([{ readIAN: { operator: '=', values: ['f'] } }]))
+
+async function syncNotifications(user: Owner) {
+  const page = await op<Collection<OpNotification>>(user, `/notifications?pageSize=100&filters=${UNREAD}`)
+  let changed = false
+  for (const n of page._embedded.elements) {
+    const res = n._links.resource
+    const wp = res?.href?.includes('/work_packages/') ? lastSegment(res.href) : null
+    const actor = n._links.actor?.title
+    const reason = n.reason === 'dateAlert' ? 'prazo chegando' : (REASONS[n.reason] ?? 'atualizou')
+    const isNew = notify(user.id, {
+      source: 'openproject',
+      externalId: String(n.id),
+      title: wp ? `#${wp} ${res?.title ?? ''}`.trim() : (res?.title ?? 'OpenProject'),
+      body: actor && n.reason !== 'dateAlert' ? `${actor} ${reason}` : reason,
+      link: wp ? `/demandas/${wp}` : undefined,
+      createdAt: n.createdAt,
+      // As que já estavam lá quando o studio conectou entram na lista sem disparar aviso.
+      silent: Date.now() - Date.parse(n.createdAt) > 10 * 60_000,
+    })
+    changed ||= isNew
+  }
+  // Só dá para saber o que foi lido lá quando veio a lista inteira de não lidas.
+  if (page.total <= page._embedded.elements.length)
+    changed = syncRead(user.id, 'openproject', page._embedded.elements.map((n) => String(n.id))) || changed
+  if (changed) refresh(user.id)
+}
+
+export function startNotificationPolling() {
+  const failing = new Set<string>()
+  const tick = async () => {
+    const users = db.prepare("SELECT c.user_id AS id FROM credentials c JOIN users u ON u.id = c.user_id WHERE c.kind = 'openproject' AND u.disabled_at IS NULL").all() as Owner[]
+    for (const u of users) {
+      try {
+        await syncNotifications(u)
+        failing.delete(u.id)
+      } catch (e) {
+        // Avisa no log uma vez por queda, não a cada minuto.
+        if (!failing.has(u.id)) console.warn(`Notificações do OpenProject (${u.id}): ${(e as Error).message}`)
+        failing.add(u.id)
+      }
+    }
+  }
+  tick()
+  setInterval(tick, POLL_MS)
+}
+
+export async function markNotificationsRead(user: Owner, externalIds: string[]) {
+  for (const id of externalIds) await op(user, `/notifications/${id}/read_ian`, { method: 'POST' })
 }
