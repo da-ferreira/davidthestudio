@@ -73,3 +73,13 @@ export function markRead(userId: string, ids?: string[]): { source: string; exte
   db.prepare(`UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL ${where}`).run(now, userId, ...(ids ?? []))
   return rows
 }
+
+// Entre esses ids da origem, os que já estão lidos aqui.
+export function readHere(userId: string, source: StudioNotification['source'], externalIds: string[]): string[] {
+  if (!externalIds.length) return []
+  return (
+    db
+      .prepare(`SELECT external_id AS id FROM notifications WHERE user_id = ? AND source = ? AND read_at IS NOT NULL AND external_id IN (${externalIds.map(() => '?').join(',')})`)
+      .all(userId, source, ...externalIds) as { id: string }[]
+  ).map((r) => r.id)
+}

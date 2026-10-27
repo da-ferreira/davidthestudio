@@ -2,7 +2,7 @@ import type { Demanda, DemandaActivity, DemandaAttachment, DemandaDetail, Demand
 import { credential, dropCredential, saveCredential } from './connections.ts'
 import { db } from './db.ts'
 import { HttpError } from './http-error.ts'
-import { notify, refresh, syncRead } from './notifications.ts'
+import { notify, readHere, refresh, syncRead } from './notifications.ts'
 
 type Owner = { id: string }
 type Conn = { url: string; token: string }
@@ -517,6 +517,9 @@ async function syncNotifications(user: Owner) {
     })
     changed ||= isNew
   }
+  // Lidas aqui mas ainda não lá (o aviso ao OpenProject falhou): tenta de novo.
+  const pending = readHere(user.id, 'openproject', page._embedded.elements.map((n) => String(n.id)))
+  if (pending.length) await markNotificationsRead(user, pending)
   // Só dá para saber o que foi lido lá quando veio a lista inteira de não lidas.
   if (page.total <= page._embedded.elements.length)
     changed = syncRead(user.id, 'openproject', page._embedded.elements.map((n) => String(n.id))) || changed
@@ -543,5 +546,6 @@ export function startNotificationPolling() {
 }
 
 export async function markNotificationsRead(user: Owner, externalIds: string[]) {
-  for (const id of externalIds) await op(user, `/notifications/${id}/read_ian`, { method: 'POST' })
+  // Sem corpo o OpenProject recusa com 406 (exige o content-type de JSON).
+  for (const id of externalIds) await op(user, `/notifications/${id}/read_ian`, { method: 'POST', body: {} })
 }
