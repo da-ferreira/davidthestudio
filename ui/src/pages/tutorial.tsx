@@ -74,14 +74,20 @@ export function Tutorial() {
     }
   }
 
-  // Colar (⌘V) em qualquer lugar da tela manda o print para o primeiro sem imagem.
+  // Colar (⌘V / Ctrl+V) em qualquer lugar: vai para o print sob o mouse (inclusive trocando) ou para o primeiro sem imagem.
+  const hovered = useRef<number | null>(null)
   useEffect(() => {
     if (!editable) return
     const onPaste = (e: ClipboardEvent) => {
-      const file = [...(e.clipboardData?.files ?? [])][0]
-      const index = current.current?.shots.findIndex((s) => !s.image) ?? -1
-      if (!file || index < 0) return
+      if ((e.target as HTMLElement | null)?.closest('input, textarea, [contenteditable]')) return
+      // Print copiado no Mac (⌘⇧⌃4) às vezes vem só como item, sem estar em files.
+      const item = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'))
+      const blob = e.clipboardData?.files[0] ?? item?.getAsFile()
+      if (!blob) return
       e.preventDefault()
+      const index = hovered.current ?? current.current?.shots.findIndex((s) => !s.image) ?? -1
+      if (index < 0) return setActionError('Todos os prints já têm imagem: passe o mouse sobre o que quer trocar e cole de novo.')
+      const file = blob.name ? blob : new File([blob], `print-${index + 1}.${blob.type.split('/')[1] || 'png'}`, { type: blob.type })
       attach(index, file)
     }
     window.addEventListener('paste', onPaste)
@@ -193,7 +199,7 @@ export function Tutorial() {
             <div className="flex items-end justify-between gap-4">
               <div className="flex flex-col gap-0.5">
                 <h2 className="font-medium">Prints</h2>
-                <p className="text-[13px] text-muted-foreground">Clique, arraste ou cole (⌘V) o print. Os que ficarem sem imagem saem do tutorial.</p>
+                <p className="text-[13px] text-muted-foreground">Clique, arraste ou cole (⌘V) o print. Colar vai para o print sob o mouse ou para o primeiro vazio. Os que ficarem sem imagem saem do tutorial.</p>
               </div>
               <Button disabled={!editable || busy || !withImage || uploading !== null} onClick={generate}>
                 {t.ready ? 'Montar de novo' : 'Montar tutorial'}
@@ -201,7 +207,7 @@ export function Tutorial() {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {t.shots.map((s, i) => (
-                <ShotCard key={i} n={i + 1} shot={s} disabled={!editable || busy} uploading={uploading === i} onFile={(f) => attach(i, f)} onRemove={() => remove(i)} />
+                <ShotCard key={i} n={i + 1} shot={s} disabled={!editable || busy} uploading={uploading === i} onFile={(f) => attach(i, f)} onRemove={() => remove(i)} onHover={(on) => (hovered.current = on ? i : hovered.current === i ? null : hovered.current)} />
               ))}
             </div>
           </section>
@@ -277,13 +283,15 @@ export function Tutorial() {
   )
 }
 
-function ShotCard({ n, shot, disabled, uploading, onFile, onRemove }: { n: number; shot: TutorialShot; disabled: boolean; uploading: boolean; onFile: (f: File) => void; onRemove: () => void }) {
+function ShotCard({ n, shot, disabled, uploading, onFile, onRemove, onHover }: { n: number; shot: TutorialShot; disabled: boolean; uploading: boolean; onFile: (f: File) => void; onRemove: () => void; onHover: (on: boolean) => void }) {
   const input = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
   return (
     <div
       className={cn('flex flex-col gap-3 rounded-xl border bg-card p-3', dragging && 'border-ring')}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
       onDragOver={(e) => {
         if (disabled || !e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
@@ -326,7 +334,7 @@ function ShotCard({ n, shot, disabled, uploading, onFile, onRemove }: { n: numbe
           className="flex h-28 flex-col items-center justify-center gap-1.5 rounded-[10px] border border-dashed text-[13px] text-muted-foreground hover:border-ring hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
         >
           {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
-          {uploading ? 'Enviando…' : 'Anexar print'}
+          {uploading ? 'Enviando…' : 'Anexar ou colar (⌘V)'}
         </button>
       )}
       <input
