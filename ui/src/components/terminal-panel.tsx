@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
+import { LigaturesAddon } from '@xterm/addon-ligatures'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -24,6 +25,19 @@ function terminalLook() {
     .then(async (f): Promise<Look> => {
       if (!f) return { font: null, theme: null }
       const families: string[] = []
+      // Com o nome de família de verdade, o addon de ligaduras acha o arquivo da fonte e usa as ligaduras dela.
+      try {
+        type LocalFont = { postscriptName: string; family: string }
+        const query = (window as unknown as { queryLocalFonts: () => Promise<LocalFont[]> }).queryLocalFonts()
+        // No navegador ela pede permissão e pode ficar esperando; no app do Mac responde na hora.
+        const local = await Promise.race([query, new Promise<LocalFont[]>((resolve) => setTimeout(() => resolve([]), 1500))])
+        for (const name of f.fonts) {
+          const family = local.find((x) => x.postscriptName === name)?.family
+          if (family && !families.includes(`"${family}"`)) families.push(`"${family}"`)
+        }
+      } catch {
+        // Sem acesso à lista de fontes; fica o apelido via local().
+      }
       for (const [i, name] of f.fonts.entries()) {
         const family = `studio-terminal-${i}`
         const faces = [new FontFace(family, `local("${name}")`), new FontFace(family, `local("${name.replace(/-Regular$/, '-Bold')}")`, { weight: 'bold' })]
@@ -67,6 +81,12 @@ export function TerminalPanel({ query, className }: { query: string; className?:
     } catch {
       // Sem WebGL fica o renderizador padrão.
     }
+    // O iTerm2 do usuário desenha ligaduras (->, =>, !=); sem acesso ao arquivo da fonte o addon usa as mais comuns.
+    try {
+      term.loadAddon(new LigaturesAddon())
+    } catch {
+      // Sem ligaduras.
+    }
     fit.fit()
     setState('connecting')
     setError(null)
@@ -92,6 +112,12 @@ export function TerminalPanel({ query, className }: { query: string; className?:
     }
     ws.onclose = () => setState((s) => (s === 'error' ? s : 'exited'))
 
+    // O iTerm2 avisa o Claude que Shift+Return é outra tecla; o xterm manda só Return. ESC+Return o Claude entende como quebra de linha.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== 'Enter' || !e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return true
+      if (e.type === 'keydown') send({ type: 'input', data: '\x1b\r' })
+      return false
+    })
     const input = term.onData((data) => send({ type: 'input', data }))
     const resized = term.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }))
     const observer = new ResizeObserver(() => fit.fit())

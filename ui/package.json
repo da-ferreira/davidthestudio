@@ -16,6 +16,7 @@
     "@studio/shared": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-ligatures": "^0.10.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
