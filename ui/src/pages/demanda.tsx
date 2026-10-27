@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { BookOpen, ChevronDown, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, Paperclip, Plus } from 'lucide-react'
+import { BookOpen, ChevronDown, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, Paperclip, Plus, Sparkles } from 'lucide-react'
 import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandasMeta, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -241,6 +241,19 @@ export function Demanda() {
       setComment('')
   }
 
+  // O texto já escrito vira a orientação; o rascunho fica no campo para revisar antes de postar.
+  const draft = async () => {
+    setBusy('draft')
+    setActionError(null)
+    try {
+      setComment((await api<{ text: string }>(`/demandas/${demandaId}/rascunho`, { method: 'POST', body: { hint: comment } })).text)
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : 'Falhou')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const attach = async (files: FileList | null) => {
     for (const file of Array.from(files ?? [])) {
       if (file.size > MAX_ATTACHMENT) {
@@ -421,13 +434,20 @@ export function Demanda() {
                     onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && sendComment()}
                     placeholder="Escreva um comentário… (markdown, ⌘ + Enter envia)"
                     className="min-h-[88px]"
-                    disabled={busy === 'comment'}
+                    disabled={busy === 'comment' || busy === 'draft'}
                   />
-                  <div className="flex justify-end">
-                    <Button size="sm" disabled={!comment.trim() || busy === 'comment'} onClick={sendComment}>
-                      {busy === 'comment' && <Loader2 className="size-3.5 animate-spin" />}
-                      Comentar
-                    </Button>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[12px] text-muted-foreground">A IA usa o que estiver escrito como ideia, ou escreve uma atualização do andamento. Nada é postado sem você clicar em Comentar.</span>
+                    <div className="flex shrink-0 gap-2">
+                      <Button size="sm" variant="outline" disabled={!!busy} onClick={draft}>
+                        {busy === 'draft' ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                        {busy === 'draft' ? 'Escrevendo…' : 'Escrever com IA'}
+                      </Button>
+                      <Button size="sm" disabled={!comment.trim() || !!busy} onClick={sendComment}>
+                        {busy === 'comment' && <Loader2 className="size-3.5 animate-spin" />}
+                        Comentar
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

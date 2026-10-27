@@ -7,6 +7,7 @@ import { agentStatus, claudeEnv } from './connections.ts'
 import { CONTAINERS, containerName, homeMounts } from './containers.ts'
 import { DATA_DIR, db } from './db.ts'
 import { HttpError } from './http-error.ts'
+import { notify } from './notifications.ts'
 import { checkImages, imagePath, IMAGES_DIR, MAX_IMAGES, mediaTypeOf } from './images.ts'
 import * as openproject from './openproject.ts'
 
@@ -171,6 +172,8 @@ const WRITE = [
   'Responda só com o HTML, sem texto antes ou depois.',
 ].join('\n')
 
+const tell = (r: Row, what: string) => notify(r.created_by, { source: 'studio', title: `Tutorial ${what}`, body: r.title, link: `/tutoriais/${r.id}` })
+
 async function run(r: Row, step: 'plan' | 'write', adjustment?: string) {
   running.add(r.id)
   update(r.id, { status: step === 'plan' ? 'planning' : 'writing', error: null })
@@ -185,11 +188,14 @@ async function run(r: Row, step: 'plan' | 'write', adjustment?: string) {
     if (step === 'plan') {
       const list = parseList(text)
       update(r.id, { status: 'shots', shots: JSON.stringify(list.map((description) => ({ description, image: null }))) })
+      tell(r, `o agente pediu ${list.length} ${list.length > 1 ? 'prints' : 'print'}`)
     } else {
       update(r.id, { status: 'done', body: cleanBody(text) })
+      tell(r, adjustment ? 'ajuste pronto' : 'está pronto')
     }
   } catch (err) {
     update(r.id, { status: 'error', error: String((err as Error)?.message ?? err) })
+    tell(r, 'parou com erro')
   } finally {
     running.delete(r.id)
   }

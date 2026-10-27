@@ -41,6 +41,8 @@ export function notify(userId: string, n: NewNotification): boolean {
   if (n.read || n.silent) return true
   const row = db.prepare('SELECT * FROM notifications WHERE id = ?').get(id) as Row
   emit(userId, { kind: 'notification', notification: toNotification(row) })
+  // Rodando dentro do app do Mac: ele mostra a notificação do sistema.
+  process.send?.({ kind: 'notify', id, title: n.title, body: n.body ?? '', link: n.link ?? null })
   return true
 }
 

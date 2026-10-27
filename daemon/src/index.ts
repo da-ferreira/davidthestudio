@@ -12,6 +12,7 @@ import { HttpError } from './http-error.ts'
 import * as images from './images.ts'
 import * as notifications from './notifications.ts'
 import * as openproject from './openproject.ts'
+import { draftComment } from './comment-draft.ts'
 import * as tests from './tests.ts'
 import * as conversations from './conversations.ts'
 import * as improvements from './improvements.ts'
@@ -149,6 +150,7 @@ app.get<{ Querystring: DemandaQuery }>('/api/demandas', async (req) => openproje
 app.get<{ Params: { id: string } }>('/api/demandas/:id', async (req) => openproject.getDemanda(req.user, req.params.id))
 app.get<{ Params: { id: string } }>('/api/demandas/:id/opcoes', async (req) => openproject.demandaEditOptions(req.user, req.params.id))
 app.patch<{ Params: { id: string }; Body: DemandaPatch }>('/api/demandas/:id', async (req) => openproject.updateDemanda(req.user, req.params.id, req.body))
+app.post<{ Params: { id: string }; Body: { hint?: string } }>('/api/demandas/:id/rascunho', async (req) => ({ text: await draftComment(req.user, req.params.id, req.body?.hint ?? '') }))
 app.post<{ Params: { id: string }; Body: { text: string } }>('/api/demandas/:id/comentarios', async (req) => openproject.commentDemanda(req.user, req.params.id, req.body.text ?? ''))
 app.post<{ Params: { id: string }; Body: { fileName: string; contentType: string; data: string } }>('/api/demandas/:id/anexos', { bodyLimit: 40 * 1024 * 1024 }, async (req) =>
   openproject.attachToDemanda(req.user, req.params.id, req.body),

@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, Notification, shell } from 'electron'
 
 const PORT = 4747
 const ORIGIN = `http://127.0.0.1:${PORT}`
@@ -36,6 +36,7 @@ function startDaemon() {
     stdio: ['ignore', log, log, 'ipc'],
   })
   daemon.on('message', (m) => {
+    if (m?.kind === 'notify') return showNotification(m)
     if (m?.kind !== 'pdf') return
     renderPdf(m.html).then(
       (pdf) => daemon?.send({ kind: 'pdf', id: m.id, pdf: pdf.toString('base64') }),
@@ -71,6 +72,20 @@ async function renderPdf(html) {
   }
 }
 
+// Com a janela em foco quem avisa é o sino da tela; fora dela, o macOS.
+function showNotification({ id, title, body, link }) {
+  if (win?.isFocused() || !Notification.isSupported()) return
+  const n = new Notification({ title, body })
+  n.on('click', () => {
+    if (!win) return openWindow(link)
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.executeJavaScript(`window.dispatchEvent(new CustomEvent('studio-notification', { detail: ${JSON.stringify({ id, link })} }))`)
+  })
+  n.show()
+}
+
 async function waitHealth() {
   for (let i = 0; i < 150; i++) {
     try {
@@ -81,7 +96,7 @@ async function waitHealth() {
   throw new Error(`O daemon não respondeu. Detalhes em:\n${LOG}`)
 }
 
-function openWindow() {
+function openWindow(link) {
   win = new BrowserWindow({ width: 1440, height: 900, minWidth: 960, minHeight: 600, backgroundColor: '#ffffff', title: 'david the studio' })
   // Links de fora (OpenProject, GitHub) abrem no navegador.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -94,7 +109,7 @@ function openWindow() {
     shell.openExternal(url)
   })
   win.on('closed', () => (win = null))
-  win.loadURL(ORIGIN)
+  win.loadURL(link ? ORIGIN + link : ORIGIN)
 }
 
 let quitting = false
