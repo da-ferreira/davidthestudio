@@ -16,7 +16,7 @@ Roadmap: (1) daemon + UI local, só Claude; (2) etapas SDD + executor de testes;
 daemon/   Node + TypeScript. REST + WebSocket, SQLite, git, adaptador do agente
 ui/       React + Vite + Tailwind + shadcn/ui
 shared/   tipos trocados entre daemon e UI (eventos, ticket, workspace)
-app/      app do Mac (Electron): sobe o daemon embutido e abre a tela; `pnpm app` gera em app/dist
+app/      app do Mac (Electron): sobe o daemon embutido e abre a tela; `pnpm app` gera em app/dist; `pnpm app:install` gera, troca o de /Applications e reabre
 docs/design/   referências visuais e tokens do mockup
 ```
 

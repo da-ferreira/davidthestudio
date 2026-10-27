@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter daemon --filter ui dev",
     "typecheck": "pnpm -r typecheck",
-    "app": "pnpm --filter app build"
+    "app": "pnpm --filter app build",
+    "app:install": "node app/install.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
