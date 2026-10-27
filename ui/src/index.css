@@ -199,9 +199,9 @@ html[data-app] body::before {
 html[data-app] :is(button, a, input, textarea, select, [role='button'], [role='tab'], [role='menuitem'], [role='combobox']) {
   -webkit-app-region: no-drag;
 }
-html[data-app] [data-slot='sidebar-header'] {
+html[data-app]:not([data-fullscreen]) [data-slot='sidebar-header'] {
   padding-top: 48px;
 }
-html[data-app] [data-slot='sidebar-wrapper']:has([data-slot='sidebar'][data-state='collapsed']) [data-topbar] {
+html[data-app]:not([data-fullscreen]) [data-slot='sidebar-wrapper']:has([data-slot='sidebar'][data-state='collapsed']) [data-topbar] {
   padding-left: 88px;
 }

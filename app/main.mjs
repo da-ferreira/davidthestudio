@@ -109,6 +109,11 @@ function openWindow(link) {
     e.preventDefault()
     shell.openExternal(url)
   })
+  // Em tela cheia o macOS esconde os botões da janela; a tela tira o espaço reservado a eles.
+  const fullscreen = () => win?.webContents.executeJavaScript(`document.documentElement.toggleAttribute('data-fullscreen', ${win.isFullScreen()})`)
+  win.on('enter-full-screen', fullscreen)
+  win.on('leave-full-screen', fullscreen)
+  win.webContents.on('did-finish-load', fullscreen)
   win.on('closed', () => (win = null))
   win.loadURL(link ? ORIGIN + link : ORIGIN)
 }
