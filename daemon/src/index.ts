@@ -163,6 +163,9 @@ app.get<{ Params: { id: string } }>('/api/demandas/:id/pessoas', async (req) => 
 app.post<{ Params: { id: string }; Body: { text: string; mentions?: DemandaPerson[] } }>('/api/demandas/:id/comentarios', async (req) =>
   openproject.commentDemanda(req.user, req.params.id, req.body.text ?? '', req.body.mentions ?? []),
 )
+app.patch<{ Params: { id: string; activityId: string }; Body: { text: string; mentions?: DemandaPerson[] } }>('/api/demandas/:id/comentarios/:activityId', async (req) =>
+  openproject.editDemandaComment(req.user, req.params.id, req.params.activityId, req.body?.text ?? '', req.body?.mentions ?? []),
+)
 app.post<{ Params: { id: string }; Body: { fileName: string; contentType: string; data: string } }>('/api/demandas/:id/anexos', { bodyLimit: 40 * 1024 * 1024 }, async (req) =>
   openproject.attachToDemanda(req.user, req.params.id, req.body),
 )

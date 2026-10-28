@@ -89,7 +89,15 @@ export type DemandaQuery = {
 export type DemandaPage = { items: Demanda[]; total: number; pageSize: number }
 
 // comment: texto do comentário (markdown); details: mudanças de campo já descritas pela origem.
-export type DemandaActivity = { id: string; author: string | null; createdAt: string; comment: string; details: string[] }
+export type DemandaActivity = {
+  id: string
+  author: string | null
+  createdAt: string
+  comment: string
+  details: string[]
+  // Para editar: o texto como foi escrito, com as marcações de volta a "@Nome", e quem estava marcado.
+  edit: { text: string; mentions: DemandaPerson[] } | null
+}
 
 export type DemandaAttachment = { id: string; fileName: string; size: number; contentType: string; author: string | null; createdAt: string }
 
@@ -105,13 +113,14 @@ export type DemandaDetail = Demanda & {
   watching: boolean | null
 }
 
-export type DemandaField = 'status' | 'priority' | 'assignee' | 'responsible' | 'startDate' | 'dueDate' | 'percentDone'
+export type DemandaField = 'subject' | 'status' | 'priority' | 'assignee' | 'responsible' | 'startDate' | 'dueDate' | 'percentDone'
 
 // Só os campos que o OpenProject deixa editar agora; options para os de escolha.
 export type DemandaEditOptions = Partial<Record<DemandaField, { options?: DemandaRef[] }>>
 
 export type DemandaPatch = {
   lockVersion: number
+  subject?: string
   status?: string
   priority?: string
   assignee?: string | null

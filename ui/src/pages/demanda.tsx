@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { BookOpen, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Plus, Sparkles, Terminal } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Sparkles, Terminal } from 'lucide-react'
 import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandaPerson, DemandasMeta, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -78,20 +79,65 @@ function ChangeLine({ a, created }: { a: DemandaActivity; created: boolean }) {
   )
 }
 
-function Comment({ a }: { a: DemandaActivity }) {
+type PeopleProps = { people: DemandaPerson[] | null; onNeedPeople: () => void }
+
+function Comment({ a, busy, onSave, people, onNeedPeople }: { a: DemandaActivity; busy: boolean; onSave: (text: string, mentions: DemandaPerson[]) => Promise<boolean> } & PeopleProps) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const [mentions, setMentions] = useState<DemandaPerson[]>([])
+  const start = () => {
+    setText(a.edit?.text ?? '')
+    setMentions(a.edit?.mentions ?? [])
+    setEditing(true)
+  }
+  // Em branco também salva, como no OpenProject.
+  const save = async () => (await onSave(text, mentions.filter((p) => text.includes(`@${p.name}`)))) && setEditing(false)
   return (
-    <div className="flex gap-3">
+    <div className="group flex gap-3">
       <Avatar name={a.author} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <span className="text-[13px]">
-          <span className="font-medium">{a.author ?? 'Sistema'}</span>{' '}
+        <span className="flex items-center gap-1 text-[13px]">
+          <span className="font-medium">{a.author ?? 'Sistema'}</span>
           <span className="text-muted-foreground" title={fullDate(a.createdAt)}>
             comentou {timeAgo(a.createdAt)}
           </span>
+          {a.edit && !editing && (
+            <Button size="icon-xs" variant="ghost" title="Editar comentário" className="ml-auto text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={start}>
+              <Pencil />
+            </Button>
+          )}
         </span>
-        <div className="rounded-[12px] border border-line bg-background px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-          <Markdown text={a.comment} />
-        </div>
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            <MentionTextarea
+              autoFocus
+              value={text}
+              onValueChange={setText}
+              people={people}
+              onNeedPeople={onNeedPeople}
+              onMention={(p) => setMentions((m) => (m.some((x) => x.id === p.id) ? m : [...m, p]))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
+                if (e.key === 'Escape') setEditing(false)
+              }}
+              className="min-h-[88px]"
+              disabled={busy}
+            />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(false)}>
+                Cancelar
+              </Button>
+              <Button size="sm" disabled={busy} onClick={save}>
+                {busy && <Loader2 className="size-3.5 animate-spin" />}
+                Salvar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-[12px] border border-line bg-background px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+            <Markdown text={a.comment} />
+          </div>
+        )}
         {a.details.length > 0 && <span className="text-[13px] text-muted-foreground">{a.details.join(' · ')}</span>}
       </div>
     </div>
@@ -145,7 +191,38 @@ function DateField({ value, onSave, busy }: { value: string | null; onSave: (v: 
   return <Input type="date" value={v} disabled={busy} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} className={cn(ghost, 'tabular-nums')} />
 }
 
-const withCurrent = (options: { id: string; name: string }[] | undefined, current: { id: string; name: string } | null) =>
+// Título editável no lugar: Enter ou sair do campo salva, Esc desfaz.
+function SubjectField({ value, onSave, busy }: { value: string; onSave: (v: string) => void; busy: boolean }) {
+  const [v, setV] = useState(value)
+  useEffect(() => setV(value), [value])
+  const commit = () => {
+    const next = v.trim()
+    if (!next) return setV(value)
+    if (next !== value) onSave(next)
+  }
+  return (
+    <Textarea
+      rows={1}
+      value={v}
+      disabled={busy}
+      onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        }
+        if (e.key === 'Escape') {
+          setV(value)
+          requestAnimationFrame(() => (e.target as HTMLTextAreaElement).blur())
+        }
+      }}
+      className="-ml-2 min-h-0 resize-none border-transparent bg-transparent px-2 py-0 text-[26px] font-medium tracking-[-0.025em] shadow-none hover:border-border focus-visible:border-border focus-visible:ring-0 disabled:cursor-default md:text-[26px] dark:bg-transparent"
+    />
+  )
+}
+
+const withCurrent =(options: { id: string; name: string }[] | undefined, current: { id: string; name: string } | null) =>
   current && !options?.some((o) => o.id === current.id) ? [current, ...(options ?? [])] : (options ?? [])
 
 const readBase64 = (file: File) =>
@@ -241,6 +318,11 @@ export function Demanda() {
         body: { ...patch, lockVersion: d.lockVersion },
       }),
     )
+
+  const needPeople = () =>
+    api<DemandaPerson[]>(`/demandas/${demandaId}/pessoas`)
+      .then(setPeople)
+      .catch(() => setPeople([]))
 
   const sendComment = async () => {
     if (!comment.trim()) return
@@ -399,7 +481,11 @@ export function Demanda() {
                 </a>{' '}
                 · {d.project?.name}
               </span>
-              <h1 className="text-[26px] font-medium tracking-[-0.025em]">{d.subject}</h1>
+              {options.subject ? (
+                <SubjectField value={d.subject} busy={busy === 'subject'} onSave={(v) => save({ subject: v })} />
+              ) : (
+                <h1 className="text-[26px] font-medium tracking-[-0.025em]">{d.subject}</h1>
+              )}
               <span className="text-[13px] text-muted-foreground">
                 Criada por {d.author ?? '—'} em {formatDate(d.createdAt)} · atualizada {timeAgo(d.updatedAt)}
               </span>
@@ -470,18 +556,34 @@ export function Demanda() {
                 </Tabs>
               </div>
               {shown.length === 0 && <span className="text-muted-foreground">{only === 'comentarios' ? 'Nenhum comentário ainda' : 'Nenhuma atividade'}</span>}
-              {shown.map((a) => (a.comment ? <Comment key={a.id} a={a} /> : <ChangeLine key={a.id} a={a} created={a.id === activities[0]?.id} />))}
+              {shown.map((a) =>
+                a.comment ? (
+                  <Comment
+                    key={a.id}
+                    a={a}
+                    busy={busy === `comment-${a.id}`}
+                    people={people}
+                    onNeedPeople={needPeople}
+                    onSave={(text, mentions) =>
+                      run(`comment-${a.id}`, () =>
+                        api<DemandaDetail>(`/demandas/${demandaId}/comentarios/${a.id}`, {
+                          method: 'PATCH',
+                          body: { text, mentions },
+                        }),
+                      )
+                    }
+                  />
+                ) : (
+                  <ChangeLine key={a.id} a={a} created={a.id === activities[0]?.id} />
+                ),
+              )}
               {d.can.comment && (
                 <div className="flex flex-col gap-2 pl-10">
                   <MentionTextarea
                     value={comment}
                     onValueChange={setComment}
                     people={people}
-                    onNeedPeople={() =>
-                      api<DemandaPerson[]>(`/demandas/${demandaId}/pessoas`)
-                        .then(setPeople)
-                        .catch(() => setPeople([]))
-                    }
+                    onNeedPeople={needPeople}
                     onMention={(p) => setMentions((m) => (m.some((x) => x.id === p.id) ? m : [...m, p]))}
                     onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && sendComment()}
                     placeholder="Escreva um comentário… (markdown, @ marca alguém, ⌘ + Enter envia)"

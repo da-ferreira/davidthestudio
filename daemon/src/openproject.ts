@@ -297,6 +297,7 @@ export async function getDemanda(user: Owner, id: string): Promise<DemandaDetail
       comment: cleanMarkdown(a.comment?.raw),
       // "Descrição alterado /journals/1/diff/description": o caminho só serve dentro do OpenProject.
       details: (a.details ?? []).map((d) => (d?.raw ?? '').replace(/\s*\(?\/journals\/\d+\/diff\/\S+$/, '')).filter(Boolean),
+      edit: a._links.update ? editableComment(a.comment?.raw) : null,
     })),
   )
   const attachments = files._embedded.elements.map((f): DemandaAttachment => ({
@@ -337,6 +338,7 @@ type SchemaField = {
 }
 
 const SCHEMA_KEY: Record<DemandaField, string> = {
+  subject: 'subject',
   status: 'status',
   priority: 'priority',
   assignee: 'assignee',
@@ -386,6 +388,11 @@ export async function updateDemanda(user: Owner, id: string, p: DemandaPatch): P
   const milestone = 'date' in w
   const body: Record<string, unknown> = { lockVersion: p.lockVersion }
   const links: Record<string, { href: string | null }> = {}
+  if (p.subject !== undefined) {
+    const subject = p.subject.trim()
+    if (!subject) throw new HttpError(400, 'O nome da demanda não pode ficar vazio')
+    body.subject = subject
+  }
   if (p.status) links.status = rel('statuses', p.status)
   if (p.priority) links.priority = rel('priorities', p.priority)
   if (p.assignee !== undefined) links.assignee = { href: p.assignee }
@@ -426,6 +433,30 @@ function withMentions(text: string, mentions: DemandaPerson[]) {
     out = out.split(`@${p.name}`).join(tag)
   }
   return out
+}
+
+// Inverso de withMentions: o texto volta com "@Nome" e a lista de marcados, para salvar de novo igual.
+function editableComment(raw: string | null | undefined) {
+  const mentions: DemandaPerson[] = []
+  const text = (raw ?? '').replace(/<mention\b([^>]*)>(.*?)<\/mention>/g, (_, attrs: string, label: string) => {
+    const id = attrs.match(/data-id="(\d+)"/)?.[1]
+    const type = attrs.match(/data-type="(user|group)"/)?.[1] as DemandaPerson['type'] | undefined
+    const name = label.replace(/^@/, '')
+    if (id && type && !mentions.some((m) => m.id === id)) mentions.push({ id, name, type })
+    return `@${name}`
+  })
+  return { text, mentions }
+}
+
+export async function editDemandaComment(user: Owner, id: string, activityId: string, text: string, mentions: DemandaPerson[] = []): Promise<DemandaDetail> {
+  numericId(id)
+  if (!/^\d+$/.test(activityId)) throw new HttpError(404, 'Comentário não encontrado')
+  // Em branco vale, como no OpenProject: o comentário some e a atividade fica.
+  await op(user, `/activities/${activityId}`, {
+    method: 'PATCH',
+    body: { comment: { raw: withMentions(text, mentions) } },
+  })
+  return getDemanda(user, id)
 }
 
 export async function addDemandaComment(user: Owner, id: string, text: string, mentions: DemandaPerson[] = []) {
