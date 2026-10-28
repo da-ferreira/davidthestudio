@@ -104,6 +104,8 @@ export type DemandaAttachment = { id: string; fileName: string; size: number; co
 
 export type DemandaDetail = Demanda & {
   description: string
+  // Para editar, no mesmo formato do comentário.
+  descriptionEdit: { text: string; mentions: DemandaPerson[] }
   author: string | null
   activities: DemandaActivity[]
   attachments: DemandaAttachment[]
@@ -114,7 +116,7 @@ export type DemandaDetail = Demanda & {
   watching: boolean | null
 }
 
-export type DemandaField = 'subject' | 'status' | 'priority' | 'assignee' | 'responsible' | 'startDate' | 'dueDate' | 'percentDone'
+export type DemandaField = 'subject' | 'description' | 'status' | 'priority' | 'assignee' | 'responsible' | 'startDate' | 'dueDate' | 'percentDone'
 
 // Só os campos que o OpenProject deixa editar agora; options para os de escolha.
 export type DemandaEditOptions = Partial<Record<DemandaField, { options?: DemandaRef[] }>>
@@ -122,6 +124,7 @@ export type DemandaEditOptions = Partial<Record<DemandaField, { options?: Demand
 export type DemandaPatch = {
   lockVersion: number
   subject?: string
+  description?: { text: string; mentions: DemandaPerson[] }
   status?: string
   priority?: string
   assignee?: string | null

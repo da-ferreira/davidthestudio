@@ -312,6 +312,7 @@ export async function getDemanda(user: Owner, id: string): Promise<DemandaDetail
   return {
     ...toDemanda(conn(user)!.url, w),
     description: cleanMarkdown(w.description?.raw),
+    descriptionEdit: editableComment(w.description?.raw),
     author: w._links.author?.title ?? null,
     activities,
     attachments,
@@ -340,6 +341,7 @@ type SchemaField = {
 
 const SCHEMA_KEY: Record<DemandaField, string> = {
   subject: 'subject',
+  description: 'description',
   status: 'status',
   priority: 'priority',
   assignee: 'assignee',
@@ -394,6 +396,7 @@ export async function updateDemanda(user: Owner, id: string, p: DemandaPatch): P
     if (!subject) throw new HttpError(400, 'O nome da demanda não pode ficar vazio')
     body.subject = subject
   }
+  if (p.description) body.description = { raw: withMentions(p.description.text, p.description.mentions ?? []) }
   if (p.status) links.status = rel('statuses', p.status)
   if (p.priority) links.priority = rel('priorities', p.priority)
   if (p.assignee !== undefined) links.assignee = { href: p.assignee }

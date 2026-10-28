@@ -129,7 +129,6 @@ export function Tutorial() {
       </>
     )
 
-  const withImage = t.shots.filter((s) => s.image).length
   const doc = `/api/tutoriais/${t.id}/documento`
 
   return (
@@ -199,9 +198,9 @@ export function Tutorial() {
             <div className="flex items-end justify-between gap-4">
               <div className="flex flex-col gap-0.5">
                 <h2 className="font-medium">Prints</h2>
-                <p className="text-[13px] text-muted-foreground">Clique, arraste ou cole (⌘V) o print. Colar vai para o print sob o mouse ou para o primeiro vazio. Os que ficarem sem imagem saem do tutorial.</p>
+                <p className="text-[13px] text-muted-foreground">Clique, arraste ou cole (⌘V) o print. Colar vai para o print sob o mouse ou para o primeiro vazio. Os que ficarem sem imagem saem do tutorial; sem nenhum, ele sai só com texto.</p>
               </div>
-              <Button disabled={!editable || busy || !withImage || uploading !== null} onClick={generate}>
+              <Button disabled={!editable || busy || uploading !== null} onClick={generate}>
                 {t.ready ? 'Montar de novo' : 'Montar tutorial'}
               </Button>
             </div>

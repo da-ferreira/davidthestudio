@@ -46,4 +46,8 @@ export function DueDate({ date, closed, hintOnly }: { date: string | null; close
   )
 }
 
-export const isClosedStatus = (status: DemandaRef | null, meta: DemandasMeta | null) => !!status && !!meta?.statuses.find((s) => s.id === status.id)?.closed
+// Em teste a demanda já saiu das mãos de quem desenvolve: o prazo vale como o de uma finalizada, sem aviso de atraso.
+export const isDueDateSettled = (status: DemandaRef | null, meta: DemandasMeta | null) => {
+  const s = status && meta?.statuses.find((x) => x.id === status.id)
+  return !!s && (s.closed || s.testing)
+}

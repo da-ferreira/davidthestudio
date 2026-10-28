@@ -13,7 +13,7 @@ import { Topbar } from '@/components/topbar'
 import { Markdown } from '@/components/markdown'
 import { MentionTextarea } from '@/components/mention-textarea'
 import { timeAgo } from '@/components/notifications'
-import { DemandaStatusBadge, DueDate, formatDate, isClosedStatus, Priority } from '@/components/demanda-badges'
+import { DemandaStatusBadge, DueDate, formatDate, isDueDateSettled, Priority } from '@/components/demanda-badges'
 import { ApiError, api } from '@/lib/api'
 import { demandaClipboard } from '@/lib/demanda'
 import { cn } from '@/lib/utils'
@@ -80,18 +80,52 @@ function ChangeLine({ a, created }: { a: DemandaActivity; created: boolean }) {
 }
 
 type PeopleProps = { people: DemandaPerson[] | null; onNeedPeople: () => void }
+type EditText = { text: string; mentions: DemandaPerson[] }
 
-function Comment({ a, busy, onSave, people, onNeedPeople }: { a: DemandaActivity; busy: boolean; onSave: (text: string, mentions: DemandaPerson[]) => Promise<boolean> } & PeopleProps) {
+// Edição de texto em markdown com @ (comentário e descrição). Em branco também salva, como no OpenProject.
+function TextEditor({ initial, busy, onSave, onCancel, people, onNeedPeople }: { initial: EditText; busy: boolean; onSave: (v: EditText) => void; onCancel: () => void } & PeopleProps) {
+  const [text, setText] = useState(initial.text)
+  const [mentions, setMentions] = useState(initial.mentions)
+  const save = () => onSave({ text, mentions: mentions.filter((p) => text.includes(`@${p.name}`)) })
+  return (
+    <div className="flex flex-col gap-2">
+      <MentionTextarea
+        autoFocus
+        value={text}
+        onValueChange={setText}
+        people={people}
+        onNeedPeople={onNeedPeople}
+        onMention={(p) => setMentions((m) => (m.some((x) => x.id === p.id) ? m : [...m, p]))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
+          if (e.key === 'Escape') onCancel()
+        }}
+        className="min-h-[88px]"
+        disabled={busy}
+      />
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline" disabled={busy} onClick={onCancel}>
+          Cancelar
+        </Button>
+        <Button size="sm" disabled={busy} onClick={save}>
+          {busy && <Loader2 className="size-3.5 animate-spin" />}
+          Salvar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function EditButton({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <Button size="icon-xs" variant="ghost" title={title} className="ml-auto text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={onClick}>
+      <Pencil />
+    </Button>
+  )
+}
+
+function Comment({ a, busy, onSave, people, onNeedPeople }: { a: DemandaActivity; busy: boolean; onSave: (v: EditText) => Promise<boolean> } & PeopleProps) {
   const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
-  const [mentions, setMentions] = useState<DemandaPerson[]>([])
-  const start = () => {
-    setText(a.edit?.text ?? '')
-    setMentions(a.edit?.mentions ?? [])
-    setEditing(true)
-  }
-  // Em branco também salva, como no OpenProject.
-  const save = async () => (await onSave(text, mentions.filter((p) => text.includes(`@${p.name}`)))) && setEditing(false)
   return (
     <div className="group flex gap-3">
       <Avatar name={a.author} />
@@ -101,38 +135,10 @@ function Comment({ a, busy, onSave, people, onNeedPeople }: { a: DemandaActivity
           <span className="text-muted-foreground" title={fullDate(a.createdAt)}>
             comentou {timeAgo(a.createdAt)}
           </span>
-          {a.edit && !editing && (
-            <Button size="icon-xs" variant="ghost" title="Editar comentário" className="ml-auto text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={start}>
-              <Pencil />
-            </Button>
-          )}
+          {a.edit && !editing && <EditButton title="Editar comentário" onClick={() => setEditing(true)} />}
         </span>
-        {editing ? (
-          <div className="flex flex-col gap-2">
-            <MentionTextarea
-              autoFocus
-              value={text}
-              onValueChange={setText}
-              people={people}
-              onNeedPeople={onNeedPeople}
-              onMention={(p) => setMentions((m) => (m.some((x) => x.id === p.id) ? m : [...m, p]))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save()
-                if (e.key === 'Escape') setEditing(false)
-              }}
-              className="min-h-[88px]"
-              disabled={busy}
-            />
-            <div className="flex justify-end gap-2">
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(false)}>
-                Cancelar
-              </Button>
-              <Button size="sm" disabled={busy} onClick={save}>
-                {busy && <Loader2 className="size-3.5 animate-spin" />}
-                Salvar
-              </Button>
-            </div>
-          </div>
+        {editing && a.edit ? (
+          <TextEditor initial={a.edit} busy={busy} people={people} onNeedPeople={onNeedPeople} onCancel={() => setEditing(false)} onSave={async (v) => (await onSave(v)) && setEditing(false)} />
         ) : (
           <div className="rounded-[12px] border border-line bg-background px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
             <Markdown text={a.comment} />
@@ -254,6 +260,7 @@ export function Demanda() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [termWs, setTermWs] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [editingDescription, setEditingDescription] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -261,6 +268,7 @@ export function Demanda() {
     setError(null)
     setPeople(null)
     setMentions([])
+    setEditingDescription(false)
     api<DemandaDetail>(`/demandas/${demandaId}`)
       .then(setD)
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Falhou'))
@@ -373,7 +381,7 @@ export function Demanda() {
     if (fileInput.current) fileInput.current.value = ''
   }
 
-  const closed = d ? isClosedStatus(d.status, meta) : false
+  const closed = d ? isDueDateSettled(d.status, meta) : false
   const activities = d?.activities.filter((a) => a.comment || a.details.length) ?? []
   const commentCount = activities.filter((a) => a.comment).length
   const shown = only === 'comentarios' ? activities.filter((a) => a.comment) : activities
@@ -491,9 +499,25 @@ export function Demanda() {
               </span>
             </div>
 
-            <section className="flex max-w-[760px] flex-col gap-3">
-              <h2 className="font-medium">Descrição</h2>
-              {d.description.trim() ? <Markdown text={d.description} className="text-body" /> : <span className="text-muted-foreground">Sem descrição</span>}
+            <section className="group flex max-w-[760px] flex-col gap-3">
+              <h2 className="flex items-center font-medium">
+                Descrição
+                {options.description && !editingDescription && <EditButton title="Editar descrição" onClick={() => setEditingDescription(true)} />}
+              </h2>
+              {editingDescription ? (
+                <TextEditor
+                  initial={d.descriptionEdit}
+                  busy={busy === 'description'}
+                  people={people}
+                  onNeedPeople={needPeople}
+                  onCancel={() => setEditingDescription(false)}
+                  onSave={async (v) => (await save({ description: v })) && setEditingDescription(false)}
+                />
+              ) : d.description.trim() ? (
+                <Markdown text={d.description} className="text-body" />
+              ) : (
+                <span className="text-muted-foreground">Sem descrição</span>
+              )}
             </section>
 
             {(d.attachments.length > 0 || d.can.attach) && (
@@ -564,11 +588,11 @@ export function Demanda() {
                     busy={busy === `comment-${a.id}`}
                     people={people}
                     onNeedPeople={needPeople}
-                    onSave={(text, mentions) =>
+                    onSave={(body) =>
                       run(`comment-${a.id}`, () =>
                         api<DemandaDetail>(`/demandas/${demandaId}/comentarios/${a.id}`, {
                           method: 'PATCH',
-                          body: { text, mentions },
+                          body,
                         }),
                       )
                     }

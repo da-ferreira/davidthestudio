@@ -132,8 +132,8 @@ export function generate(id: string, user: User): Tutorial {
   assertAuthor(r, user)
   assertIdle(r)
   const shots = JSON.parse(r.shots) as TutorialShot[]
-  if (shots.length && !shots.some((s) => s.image)) throw new HttpError(400, 'Anexe pelo menos um print')
-  run(r, shots.length ? 'write' : 'plan')
+  // Sem lista e sem texto ainda, o agente nem chegou a dizer os prints: começa por eles. Prints vazios são aceitos.
+  run(r, shots.length || r.body ? 'write' : 'plan')
   return getTutorial(id)
 }
 
@@ -159,8 +159,9 @@ export function deleteTutorial(id: string, user: User) {
 
 const PLAN = [
   'Você ajuda a montar tutoriais passo a passo, em português do Brasil, para pessoas que vão usar um sistema.',
-  'Nesta etapa você ainda não escreve o tutorial: diga quais prints de tela precisa para ilustrá-lo.',
+  'Nesta etapa você ainda não escreve o tutorial: diga quais prints de tela precisa para ilustrá-lo, se precisar de algum.',
   'Peça só os prints que a pessoa precisa ver para não se perder: um por tela nova ou ação que não dá para explicar só com texto. Passos simples ("clique em Salvar") não precisam de print. Um tutorial curto pode ter 1 ou 2.',
+  'Prints são opcionais. Se o pedido é explicar algo (ex.: o que mudou no backend, de forma simples) e não guiar por telas, responda [] e o tutorial sai só com texto.',
   `Na ordem em que aparecem no tutorial, nunca mais de ${MAX_IMAGES} (limite de envio, não meta). Cada item diz exatamente qual tela capturar e em que estado (ex.: "Tela de login com e-mail e senha preenchidos, antes de clicar em Entrar").`,
   'Responda só com um array JSON de strings, sem texto antes ou depois.',
 ].join('\n')
@@ -182,13 +183,16 @@ async function run(r: Row, step: 'plan' | 'write', adjustment?: string) {
     const shots = JSON.parse(r.shots) as TutorialShot[]
     const sent = shots.map((s, i) => ({ ...s, n: i + 1 })).filter((s) => s.image)
     const parts = [`O que o tutorial deve ensinar:\n${r.prompt}`, r.context && `Contexto (demanda no OpenProject):\n${r.context}`]
-    if (step === 'write') parts.push(`Prints enviados, na mesma ordem das imagens anexadas:\n${sent.map((s) => `print-${s.n}: ${s.description}`).join('\n')}`)
+    if (step === 'write')
+      parts.push(sent.length ? `Prints enviados, na mesma ordem das imagens anexadas:\n${sent.map((s) => `print-${s.n}: ${s.description}`).join('\n')}` : 'Nenhum print foi enviado: o tutorial sai só com texto, sem <figure> nem <img>.')
     if (adjustment) parts.push(`Versão atual do tutorial:\n${r.body}`, `Ajuste pedido (mude só isso e mantenha o resto como está):\n${adjustment}`)
     const prompt: Prompt = { text: parts.filter(Boolean).join('\n\n'), images: step === 'write' ? sent.map((s) => s.image!) : [] }
     const text = await ask(r, prompt, step === 'plan' ? PLAN : WRITE)
     if (step === 'plan') {
       const list = parseList(text)
       update(r.id, { status: 'shots', shots: JSON.stringify(list.map((description) => ({ description, image: null }))) })
+      // Sem prints não há o que esperar: segue direto para o texto.
+      if (!list.length) return run(getRow(r.id), 'write')
       tell(r, `o agente pediu ${list.length} ${list.length > 1 ? 'prints' : 'print'}`)
     } else {
       update(r.id, { status: 'done', body: cleanBody(text) })
@@ -238,7 +242,7 @@ function parseList(text: string): string[] {
   } catch {
     throw new Error('O agente não devolveu a lista de prints; tente de novo.')
   }
-  if (!Array.isArray(list) || !list.length || list.some((s) => typeof s !== 'string')) throw new Error('O agente não devolveu a lista de prints; tente de novo.')
+  if (!Array.isArray(list) || list.some((s) => typeof s !== 'string')) throw new Error('O agente não devolveu a lista de prints; tente de novo.')
   return (list as string[]).slice(0, MAX_IMAGES)
 }
 

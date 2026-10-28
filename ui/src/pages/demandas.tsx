@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Topbar } from '@/components/topbar'
 import { timeAgo } from '@/components/notifications'
-import { DemandaStatusBadge, DueDate, isClosedStatus, Priority } from '@/components/demanda-badges'
+import { DemandaStatusBadge, DueDate, isDueDateSettled, Priority } from '@/components/demanda-badges'
 import { ApiError, api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -265,7 +265,7 @@ export function Demandas() {
                         <Priority priority={d.priority} />
                       </TableCell>
                       <TableCell>
-                        <DueDate date={d.dueDate} closed={isClosedStatus(d.status, meta)} />
+                        <DueDate date={d.dueDate} closed={isDueDateSettled(d.status, meta)} />
                       </TableCell>
                       <TableCell className="pr-5 text-muted-foreground">{timeAgo(d.updatedAt)}</TableCell>
                     </TableRow>
