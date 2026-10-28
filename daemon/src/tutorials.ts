@@ -160,7 +160,8 @@ export function deleteTutorial(id: string, user: User) {
 const PLAN = [
   'Você ajuda a montar tutoriais passo a passo, em português do Brasil, para pessoas que vão usar um sistema.',
   'Nesta etapa você ainda não escreve o tutorial: diga quais prints de tela precisa para ilustrá-lo.',
-  `Liste no máximo ${MAX_IMAGES} prints, na ordem em que aparecem no tutorial. Cada item diz exatamente qual tela capturar e em que estado (ex.: "Tela de login com e-mail e senha preenchidos, antes de clicar em Entrar").`,
+  'Peça só os prints que a pessoa precisa ver para não se perder: um por tela nova ou ação que não dá para explicar só com texto. Passos simples ("clique em Salvar") não precisam de print. Um tutorial curto pode ter 1 ou 2.',
+  `Na ordem em que aparecem no tutorial, nunca mais de ${MAX_IMAGES} (limite de envio, não meta). Cada item diz exatamente qual tela capturar e em que estado (ex.: "Tela de login com e-mail e senha preenchidos, antes de clicar em Entrar").`,
   'Responda só com um array JSON de strings, sem texto antes ou depois.',
 ].join('\n')
 
@@ -350,6 +351,6 @@ export async function attachToDemanda(id: string, user: User): Promise<DemandaDe
   files.push(await openproject.uploadAttachment(user, demanda.id, { fileName, contentType: 'text/html', data: Buffer.from(html).toString('base64') }))
   const list = files.map((f) => `- [${f.fileName}](${f.url})`).join('\n')
   const formats = files.length > 1 ? 'em PDF e em HTML (abre no navegador)' : 'em HTML (abre no navegador)'
-  await openproject.addDemandaComment(user, demanda.id, `Segue o tutorial **${r.title}** para esta demanda, ${formats}:\n\n${list}`)
+  await openproject.addDemandaComment(user, demanda.id, `Segue o tutorial **${r.title}** para esta demanda, ${formats}:\n\n${list}\n\nÉ um guia para orientar, não cobre 100% dos casos. Fique à vontade para fazer ajustes ou passos que não estejam aqui.`)
   return openproject.getDemanda(user, demanda.id)
 }

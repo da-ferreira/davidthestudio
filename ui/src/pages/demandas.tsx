@@ -139,7 +139,9 @@ export function Demandas() {
   }
 
   const notConnected = error?.includes('Conexões')
-  const statuses = meta?.statuses.filter((s) => (get('situacao') === 'fechadas' ? s.closed : get('situacao') === 'todas' ? true : !s.closed)) ?? []
+  const situacao = get('situacao') || 'abertas'
+  const statuses =
+    meta?.statuses.filter((s) => (situacao === 'fechadas' ? s.closed : situacao === 'todas' ? true : !s.closed && s.testing === (situacao === 'teste'))) ?? []
 
   return (
     <>
@@ -167,6 +169,7 @@ export function Demandas() {
                 <Tabs value={get('situacao') || 'abertas'} onValueChange={(v) => setMany({ status: '', situacao: v === 'abertas' ? '' : v })}>
                   <TabsList>
                     <TabsTrigger value="abertas">Abertas</TabsTrigger>
+                    <TabsTrigger value="teste">Em teste</TabsTrigger>
                     <TabsTrigger value="fechadas">Finalizadas</TabsTrigger>
                     <TabsTrigger value="todas">Todas</TabsTrigger>
                   </TabsList>

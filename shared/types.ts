@@ -48,7 +48,8 @@ export type DemandaRef = { id: string; name: string }
 
 // Quem dá para marcar com @ num comentário: membros do projeto da demanda.
 export type DemandaPerson = { id: string; name: string; type: 'user' | 'group' }
-export type DemandaStatus = DemandaRef & { closed: boolean; color: string | null }
+// testing: status de teste (pelo nome); saem de Abertas e ganham aba própria.
+export type DemandaStatus = DemandaRef & { closed: boolean; testing: boolean; color: string | null }
 export type DemandasMeta = { statuses: DemandaStatus[]; types: DemandaRef[]; priorities: DemandaRef[]; projects: DemandaRef[] }
 
 export type Demanda = {
@@ -75,7 +76,7 @@ export type Demanda = {
 // Filtros da lista, iguais aos parâmetros da URL da tela.
 export type DemandaQuery = {
   escopo?: 'atribuidas' | 'responsavel' | 'observando' | 'criadas' | 'todas'
-  situacao?: 'abertas' | 'fechadas' | 'todas'
+  situacao?: 'abertas' | 'teste' | 'fechadas' | 'todas'
   status?: string
   projeto?: string
   tipo?: string

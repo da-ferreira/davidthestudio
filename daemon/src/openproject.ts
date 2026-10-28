@@ -166,6 +166,8 @@ export async function demandasMeta(user: Owner): Promise<DemandasMeta> {
       id: String(s.id),
       name: s.name,
       closed: s.isClosed,
+      // O OpenProject trata teste como aberto; aqui vira aba própria. Pega Em Teste, Testado e Falha no Teste.
+      testing: !s.isClosed && /test/i.test(s.name),
       color: s.color ?? null,
     })),
     types: types._embedded.elements.map(plain),
@@ -202,13 +204,12 @@ export async function listDemandas(user: Owner, q: DemandaQuery): Promise<Demand
   const scope = SCOPE[q.escopo ?? 'atribuidas']
   if (scope) f.push({ [scope]: { operator: '=', values: ['me'] } })
   if (q.status) f.push({ status: { operator: '=', values: [q.status] } })
-  else
-    f.push({
-      status: {
-        operator: q.situacao === 'fechadas' ? 'c' : q.situacao === 'todas' ? '*' : 'o',
-        values: null,
-      },
-    })
+  else if (q.situacao === 'fechadas' || q.situacao === 'todas') f.push({ status: { operator: q.situacao === 'fechadas' ? 'c' : '*', values: null } })
+  else {
+    const testing = q.situacao === 'teste'
+    const ids = (await demandasMeta(user)).statuses.filter((s) => !s.closed && s.testing === testing).map((s) => s.id)
+    f.push({ status: { operator: '=', values: ids } })
+  }
   if (q.projeto) f.push({ project: { operator: '=', values: [q.projeto] } })
   if (q.tipo) f.push({ type: { operator: '=', values: [q.tipo] } })
   if (q.prioridade) f.push({ priority: { operator: '=', values: [q.prioridade] } })
