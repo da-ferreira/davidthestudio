@@ -452,9 +452,10 @@ export async function editDemandaComment(user: Owner, id: string, activityId: st
   numericId(id)
   if (!/^\d+$/.test(activityId)) throw new HttpError(404, 'Comentário não encontrado')
   // Em branco vale, como no OpenProject: o comentário some e a atividade fica.
+  // Na edição o OpenProject quer o texto puro; { raw } (como ao criar) dá "comment is invalid".
   await op(user, `/activities/${activityId}`, {
     method: 'PATCH',
-    body: { comment: { raw: withMentions(text, mentions) } },
+    body: { comment: withMentions(text, mentions) },
   })
   return getDemanda(user, id)
 }
