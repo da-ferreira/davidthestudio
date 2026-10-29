@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { BookOpen, Check, ChevronDown, Copy, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Sparkles, Terminal } from 'lucide-react'
-import type { DemandaActivity, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandaPerson, DemandasMeta, Workspace } from '@studio/shared'
+import { BookOpen, Check, ChevronDown, Copy, Download, Eye, EyeOff, ExternalLink, FileText, Loader2, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Sparkles, Terminal } from 'lucide-react'
+import type { DemandaActivity, DemandaAttachment, DemandaDetail, DemandaEditOptions, DemandaPatch, DemandaPerson, DemandasMeta, Workspace } from '@studio/shared'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -244,6 +245,49 @@ const readBase64 = (file: File) =>
 
 const MAX_ATTACHMENT = 25 * 1024 * 1024
 
+const viewable = (type: string) => type.startsWith('image/') || type === 'application/pdf' || type.startsWith('text/') || type === 'application/json'
+
+function AttachmentViewer({ attachment: a, onClose }: { attachment: DemandaAttachment | null; onClose: () => void }) {
+  const src = a ? `/api/demandas/anexos/${a.id}` : ''
+  return (
+    <Dialog open={!!a} onOpenChange={(open) => !open && onClose()}>
+      {a && (
+        <DialogContent showCloseButton={false} className="flex h-[88vh] w-[min(1100px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+          <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+            <div className="flex min-w-0 flex-col">
+              <DialogTitle className="truncate text-[14px] font-medium">{a.fileName}</DialogTitle>
+              <DialogDescription className="truncate text-[12px]">
+                {fileSize(a.size)} · {a.author ?? '—'} · {timeAgo(a.createdAt)}
+              </DialogDescription>
+            </div>
+            <Button size="sm" variant="outline" className="ml-auto" asChild>
+              <a href={`${src}?baixar=1`} download={a.fileName}>
+                <Download className="size-3.5" />
+                Baixar
+              </a>
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              Fechar
+            </Button>
+          </div>
+          {a.contentType.startsWith('image/') ? (
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-surface p-4">
+              <img src={src} alt={a.fileName} className="max-h-full max-w-full object-contain" />
+            </div>
+          ) : viewable(a.contentType) ? (
+            <iframe src={src} title={a.fileName} className="min-h-0 w-full flex-1 bg-white" />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-surface text-muted-foreground">
+              <FileText className="size-8" />
+              <span>Esse tipo de arquivo não tem pré-visualização. Baixe para abrir.</span>
+            </div>
+          )}
+        </DialogContent>
+      )}
+    </Dialog>
+  )
+}
+
 export function Demanda() {
   const { demandaId } = useParams()
   const [d, setD] = useState<DemandaDetail | null>(null)
@@ -257,6 +301,7 @@ export function Demanda() {
   const [people, setPeople] = useState<DemandaPerson[] | null>(null)
   const [mentions, setMentions] = useState<DemandaPerson[]>([])
   const fileInput = useRef<HTMLInputElement>(null)
+  const [viewing, setViewing] = useState<DemandaAttachment | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [termWs, setTermWs] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -539,13 +584,12 @@ export function Demanda() {
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {d.attachments.map((a) => (
-                    <a
+                    <button
                       key={a.id}
-                      href={`/api/demandas/anexos/${a.id}`}
-                      target="_blank"
-                      rel="noreferrer"
+                      type="button"
+                      onClick={() => setViewing(a)}
                       title={`Abrir ${a.fileName}`}
-                      className="flex w-[220px] flex-col overflow-hidden rounded-[12px] border border-line transition-colors hover:bg-surface"
+                      className="flex w-[220px] flex-col overflow-hidden rounded-[12px] border border-line text-left transition-colors hover:bg-surface"
                     >
                       {a.contentType.startsWith('image/') ? (
                         <img src={`/api/demandas/anexos/${a.id}`} alt="" className="h-[110px] w-full border-b border-line object-cover" />
@@ -560,7 +604,7 @@ export function Demanda() {
                           {fileSize(a.size)} · {a.author ?? '—'} · {timeAgo(a.createdAt)}
                         </span>
                       </div>
-                    </a>
+                    </button>
                   ))}
                 </div>
               </section>
@@ -723,6 +767,7 @@ export function Demanda() {
           </aside>
         </div>
       )}
+      <AttachmentViewer attachment={viewing} onClose={() => setViewing(null)} />
     </>
   )
 }

@@ -170,12 +170,18 @@ app.post<{ Params: { id: string }; Body: { fileName: string; contentType: string
   openproject.attachToDemanda(req.user, req.params.id, req.body),
 )
 app.post<{ Params: { id: string }; Body: { watch: boolean } }>('/api/demandas/:id/observar', async (req) => openproject.watchDemanda(req.user, req.params.id, !!req.body.watch))
-app.get<{ Params: { id: string } }>('/api/demandas/anexos/:id', async (req, reply) => {
+app.get<{ Params: { id: string }; Querystring: { baixar?: string } }>('/api/demandas/anexos/:id', async (req, reply) => {
   const res = await openproject.downloadAttachment(req.user, req.params.id)
-  for (const h of ['content-type', 'content-disposition', 'content-length']) {
+  for (const h of ['content-type', 'content-length']) {
     const v = res.headers.get(h)
     if (v) reply.header(h, v)
   }
+  // O OpenProject manda "attachment", que dentro do visualizador vira download em vez de abrir.
+  const disposition = res.headers.get('content-disposition') ?? ''
+  reply.header('content-disposition', req.query.baixar ? disposition || 'attachment' : disposition.replace(/^attachment/i, 'inline') || 'inline')
+  // Anexo de terceiros aberto na origem do studio: HTML e afins rodam isolados, sem script.
+  const type = res.headers.get('content-type') ?? ''
+  if (!/^(image\/|application\/pdf)/.test(type)) reply.header('content-security-policy', "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'")
   return reply.header('cache-control', 'private, max-age=3600').send(Readable.fromWeb(res.body as never))
 })
 
