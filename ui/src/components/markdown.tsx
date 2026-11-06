@@ -1,6 +1,8 @@
 import { isValidElement, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +47,7 @@ const components: Components = {
     const lang = /language-(\S+)/.exec(code.className ?? '')?.[1]
     return <CodeBlock lang={lang} text={String(code.children ?? '').replace(/\n$/, '')} />
   },
+  figure: ({ children }) => <>{children}</>,
   table: ({ children }) => (
     <div className="overflow-x-auto rounded-[10px] border border-line">
       <table className="w-full text-[13px]">{children}</table>
@@ -82,7 +85,8 @@ function CodeBlock({ lang, text }: { lang?: string; text: string }) {
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-2.5 leading-relaxed break-words', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {/* O OpenProject guarda tabelas como HTML dentro do markdown; sanitize tira scripts e atributos perigosos. */}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]} components={components}>
         {text}
       </ReactMarkdown>
     </div>
