@@ -12,9 +12,10 @@ export function NovoTicket() {
   const [params] = useSearchParams()
   const melhoriaId = params.get('melhoria')
   const demandaId = params.get('demanda')
+  const titulo = params.get('titulo')
   const [ws, setWs] = useState<WorkspaceDetail | null>(null)
   // undefined: ainda carregando; null: sem melhoria de origem (parâmetro ausente ou não encontrada).
-  const [initial, setInitial] = useState<TicketFormValues | null | undefined>(melhoriaId || demandaId ? undefined : null)
+  const [initial, setInitial] = useState<TicketFormValues | null | undefined>(melhoriaId || demandaId ? undefined : titulo ? { title: titulo, description: '' } : null)
 
   useEffect(() => {
     api<WorkspaceDetail>(`/workspaces/${id}`).then(setWs)
@@ -46,7 +47,7 @@ export function NovoTicket() {
     <>
       <Topbar crumbs={[ws?.name ?? '…', 'Tickets', 'Novo']} />
       <TicketForm
-        key={melhoriaId ?? demandaId}
+        key={melhoriaId ?? demandaId ?? titulo}
         workspace={ws}
         initial={initial ?? undefined}
         layout="page"

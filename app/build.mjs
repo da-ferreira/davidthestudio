@@ -32,7 +32,7 @@ await esbuild.build({
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 })
 fs.copyFileSync(path.join(ROOT, 'daemon/src/mcp-bridge.mjs'), path.join(OUT, 'daemon/mcp-bridge.mjs'))
-fs.copyFileSync(path.join(HERE, 'main.mjs'), path.join(OUT, 'main.mjs'))
+for (const f of ['main.mjs', 'trayTemplate.png', 'trayTemplate@2x.png']) fs.copyFileSync(path.join(HERE, f), path.join(OUT, f))
 
 fs.writeFileSync(
   path.join(OUT, 'package.json'),

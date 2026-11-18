@@ -22,10 +22,11 @@ import { Tutoriais } from '@/pages/tutoriais'
 import { NovoTutorial } from '@/pages/novo-tutorial'
 import { Tutorial } from '@/pages/tutorial'
 import { RootTerminal } from '@/pages/terminal'
+import { Rapido } from '@/pages/rapido'
 import { AuthGate } from '@/components/auth-gate'
 
 // No app do Mac a janela não tem barra de título: o CSS abre espaço para os botões da janela.
-if (navigator.userAgent.includes('Electron')) document.documentElement.dataset.app = 'mac'
+if (navigator.userAgent.includes('Electron') && location.pathname !== '/rapido') document.documentElement.dataset.app = 'mac'
 
 // O modo Perguntar virou Conversar; links antigos continuam abrindo a conversa.
 function RedirectPerguntar() {
@@ -38,6 +39,14 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="convite/:token" element={<Convite />} />
+        <Route
+          path="rapido"
+          element={
+            <AuthGate>
+              <Rapido />
+            </AuthGate>
+          }
+        />
         <Route
           element={
             <AuthGate>

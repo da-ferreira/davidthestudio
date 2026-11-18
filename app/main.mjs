@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, Menu, Notification, screen, shell, Tray } from 'electron'
 
 const PORT = 4747
 const ORIGIN = `http://127.0.0.1:${PORT}`
@@ -27,6 +27,8 @@ function shellPath() {
 
 let daemon
 let win
+let tray
+let quick
 
 function startDaemon() {
   fs.mkdirSync(DATA, { recursive: true })
@@ -118,9 +120,100 @@ function openWindow(link) {
   win.loadURL(link ? ORIGIN + link : ORIGIN)
 }
 
+// Abre um link do studio na janela principal, criando ou trazendo ela para frente.
+function openInMain(link) {
+  quick?.hide()
+  if (!win) return openWindow(link)
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  win.webContents.executeJavaScript(`window.dispatchEvent(new CustomEvent('studio-open', { detail: ${JSON.stringify(link)} }))`)
+}
+
+const QUICK = { width: 600, height: 460 }
+// Clicar no ícone com a janelinha aberta tira o foco dela antes do clique chegar; sem isso ela reabriria.
+let hiddenAt = 0
+
+// Janelinha do ícone no topo: fica carregada e escondida para abrir na hora.
+function createQuick() {
+  quick = new BrowserWindow({
+    ...QUICK,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#ffffff',
+  })
+  quick.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  quick.on('blur', () => {
+    quick.hide()
+    hiddenAt = Date.now()
+  })
+  quick.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(ORIGIN)) openInMain(url.slice(ORIGIN.length) || '/')
+    else shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  // Esc devolve o foco ao app de onde a pessoa veio, como o Spotlight.
+  quick.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'Escape') return
+    e.preventDefault()
+    quick.hide()
+    if (!win?.isFocused()) app.hide()
+  })
+  quick.on('closed', () => (quick = null))
+  quick.loadURL(`${ORIGIN}/rapido`)
+}
+
+// Pelo ícone abre logo abaixo dele; pelo atalho, no alto da tela onde está o mouse.
+function showQuick(from) {
+  if (!quick) createQuick()
+  if (from && Date.now() - hiddenAt < 300) return
+  let x, y
+  if (from) {
+    const display = screen.getDisplayMatching(from)
+    x = Math.round(from.x + from.width / 2 - QUICK.width / 2)
+    x = Math.max(display.workArea.x + 8, Math.min(x, display.workArea.x + display.workArea.width - QUICK.width - 8))
+    y = from.y + from.height + 6
+  } else {
+    const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    x = Math.round(workArea.x + (workArea.width - QUICK.width) / 2)
+    y = Math.round(workArea.y + workArea.height * 0.18)
+  }
+  quick.setPosition(x, y)
+  quick.webContents.executeJavaScript(`window.dispatchEvent(new Event('studio-quick-show'))`)
+  quick.show()
+  quick.focus()
+}
+
+const SHORTCUT = 'Alt+Space'
+
+function createTray() {
+  // O sufixo Template faz o macOS pintar o ícone de preto ou branco conforme a barra.
+  tray = new Tray(path.join(HERE, 'trayTemplate.png'))
+  tray.setToolTip('david the studio')
+  tray.on('click', () => showQuick(tray.getBounds()))
+  tray.on('right-click', () =>
+    tray.popUpContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Abrir studio', click: () => openInMain('/') },
+        { label: 'Busca rápida', accelerator: SHORTCUT, click: () => showQuick(tray.getBounds()) },
+        { type: 'separator' },
+        { label: 'Sair do studio', click: () => app.quit() },
+      ]),
+    ),
+  )
+  globalShortcut.register(SHORTCUT, () => showQuick())
+}
+
 let quitting = false
 app.on('before-quit', () => {
   quitting = true
+  globalShortcut.unregisterAll()
   daemon?.kill('SIGTERM')
 })
 
@@ -145,4 +238,6 @@ app.whenReady().then(async () => {
     return app.quit()
   }
   openWindow()
+  createTray()
+  createQuick()
 })
